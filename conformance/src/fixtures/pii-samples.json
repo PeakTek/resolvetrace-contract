@@ -1,5 +1,5 @@
 {
-  "$comment": "Synthetic PII samples used by the masking-parity case. Values are fabricated — Luhn-valid card and SIN are synthesized for checksum exercises and are NOT real account numbers.",
+  "$comment": "Synthetic PII samples used by the masking-parity case. Values are fabricated — Luhn-valid card and SIN are synthesized for checksum exercises and are NOT real account numbers. Rule identifiers follow the canonical set defined in schemas/scrubber-rules.matrix.json.",
   "samples": [
     {
       "id": "email-basic",
@@ -16,7 +16,7 @@
       "attributes": {
         "note": "My SSN is 123-45-6789 for the form"
       },
-      "expectedApplied": ["regex:ssn_us"]
+      "expectedApplied": ["regex:ssn-us"]
     },
     {
       "id": "sin-ca-luhn",
@@ -25,7 +25,7 @@
         "valid": "SIN on file: 046-454-286",
         "benign": "Order reference 123-456-789"
       },
-      "expectedApplied": ["regex:sin_ca"]
+      "expectedApplied": ["regex:sin-ca"]
     },
     {
       "id": "cc-luhn",
@@ -33,7 +33,7 @@
       "attributes": {
         "paymentNote": "Card 4242 4242 4242 4242 authorized"
       },
-      "expectedApplied": ["regex:credit_card"]
+      "expectedApplied": ["regex:creditcard"]
     },
     {
       "id": "phone-e164",
@@ -41,7 +41,7 @@
       "attributes": {
         "phone": "Call +14165551234 between 9 and 5"
       },
-      "expectedApplied": ["regex:phone_e164"]
+      "expectedApplied": ["regex:phone-e164"]
     },
     {
       "id": "combined",
@@ -49,7 +49,7 @@
       "attributes": {
         "message": "Reach me at combo@example.com or +15551230000; my card 4242424242424242 is on file."
       },
-      "expectedApplied": ["regex:email", "regex:phone_e164", "regex:credit_card"]
+      "expectedApplied": ["regex:creditcard", "regex:email", "regex:phone-e164"]
     }
   ]
 }

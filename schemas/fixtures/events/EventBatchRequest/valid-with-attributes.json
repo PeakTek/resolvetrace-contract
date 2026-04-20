@@ -14,11 +14,11 @@
       },
       "scrubber": {
         "version": "sdk@0.1.0",
-        "rulesDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "rulesDigest": "sha256:bd7872828dbfd9970006fbea22c24a137b27c48fb1d6dd635a88d4d09c0b28ec",
         "applied": [
-          "regex:email",
-          "regex:credit_card",
-          "attr:data-rt-mask"
+          "attr:data-rt-mask",
+          "regex:creditcard",
+          "regex:email"
         ],
         "budgetExceeded": false,
         "durationMs": 1.8
@@ -40,7 +40,7 @@
       },
       "scrubber": {
         "version": "sdk@0.1.0",
-        "rulesDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "rulesDigest": "sha256:bd7872828dbfd9970006fbea22c24a137b27c48fb1d6dd635a88d4d09c0b28ec",
         "applied": ["overflow_fallback"],
         "budgetExceeded": true,
         "durationMs": 4.2

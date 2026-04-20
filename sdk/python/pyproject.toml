@@ -61,6 +61,14 @@ Issues = "https://github.com/peaktek/resolvetrace-contract/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["resolvetrace"]
 
+[tool.hatch.build.targets.wheel.force-include]
+# Stage-1 scrubber rule matrix — shipped verbatim inside the package so
+# `importlib.resources` can read it at runtime without filesystem guessing.
+# The canonical source is at `schemas/scrubber-rules.matrix.json` at the
+# contract-repo root; a pre-commit / regeneration hook (scripts/compute_rules_digest.py)
+# keeps this copy in sync.
+"resolvetrace/scrubber-rules.matrix.json" = "resolvetrace/scrubber-rules.matrix.json"
+
 [tool.hatch.build.targets.sdist]
 include = [
   "/resolvetrace",

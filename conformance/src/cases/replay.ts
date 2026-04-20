@@ -103,7 +103,7 @@ async function run(config: ResolvedConformanceConfig): Promise<CaseResult> {
       scrubber: {
         version: 'conformance@0.1.0',
         rulesDigest:
-          'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          'sha256:bd7872828dbfd9970006fbea22c24a137b27c48fb1d6dd635a88d4d09c0b28ec',
         applied: [],
         budgetExceeded: false,
       },

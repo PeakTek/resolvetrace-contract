@@ -45,7 +45,7 @@ describe('envelope builder', () => {
     });
     const attrs = envelope.attributes as { cc: string };
     expect(attrs.cc).not.toMatch(/4111.*1111/);
-    expect(envelope.scrubber.applied).toContain('regex:credit_card');
+    expect(envelope.scrubber.applied).toContain('regex:creditcard');
   });
 
   it('leaves non-Luhn card-shaped strings alone', () => {
@@ -54,7 +54,7 @@ describe('envelope builder', () => {
       attributes: { num: '1234 5678 9012 3456' }, // not Luhn-valid
     });
     expect((envelope.attributes as { num: string }).num).toBe('1234 5678 9012 3456');
-    expect(envelope.scrubber.applied).not.toContain('regex:credit_card');
+    expect(envelope.scrubber.applied).not.toContain('regex:creditcard');
   });
 
   it('rejects invalid event types', () => {
