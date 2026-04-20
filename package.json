@@ -1,0 +1,30 @@
+{
+  "name": "@peaktek/resolvetrace-contract",
+  "version": "0.1.0",
+  "description": "ResolveTrace public contract: TypeBox schema sources, emitted JSON Schemas, and OpenAPI spec. Authority repository; not published to npm.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:schemas": "tsx scripts/build-schemas.ts",
+    "validate:fixtures": "tsx scripts/validate-fixtures.ts",
+    "validate:openapi": "tsx scripts/validate-openapi.ts",
+    "typecheck": "tsc --noEmit",
+    "check:all": "npm run typecheck && npm run build:schemas && npm run validate:fixtures && npm run validate:openapi"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.33.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@seriousme/openapi-schema-validator": "^2.4.0",
+    "@types/node": "^20.14.0",
+    "prettier": "^3.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

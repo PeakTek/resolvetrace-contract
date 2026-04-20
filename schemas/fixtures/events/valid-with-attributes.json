@@ -1,0 +1,55 @@
+{
+  "events": [
+    {
+      "eventId": "01HWZXA0P0A1B2C3D4E5F6G7H8",
+      "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5LP",
+      "type": "app.checkout.completed",
+      "capturedAt": "2026-04-20T12:35:01.000Z",
+      "attributes": {
+        "cartId": "cart_4821",
+        "itemCount": 3,
+        "totalCents": 5999,
+        "currency": "CAD",
+        "paymentMethods": ["card", "gift_card"]
+      },
+      "scrubber": {
+        "version": "sdk@0.1.0",
+        "rulesDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "applied": [
+          "regex:email",
+          "regex:credit_card",
+          "attr:data-rt-mask"
+        ],
+        "budgetExceeded": false,
+        "durationMs": 1.8
+      },
+      "sdk": {
+        "name": "@peaktek/resolvetrace-sdk",
+        "version": "0.1.0",
+        "runtime": "browser"
+      }
+    },
+    {
+      "eventId": "01HWZXA1Q0B2C3D4E5F6G7H8J9",
+      "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5LP",
+      "type": "dom.click",
+      "capturedAt": "2026-04-20T12:35:02.150Z",
+      "attributes": {
+        "selector": "button.checkout-submit",
+        "text": "[REDACTED_OVERFLOW]"
+      },
+      "scrubber": {
+        "version": "sdk@0.1.0",
+        "rulesDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "applied": ["overflow_fallback"],
+        "budgetExceeded": true,
+        "durationMs": 4.2
+      },
+      "sdk": {
+        "name": "@peaktek/resolvetrace-sdk",
+        "version": "0.1.0",
+        "runtime": "browser"
+      }
+    }
+  ]
+}

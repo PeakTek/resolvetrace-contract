@@ -1,0 +1,6 @@
+{
+  "error": "service_unavailable_shed",
+  "retryAfterSeconds": 30,
+  "class": "replay_signed_url",
+  "scope": "global"
+}

@@ -1,0 +1,17 @@
+{
+  "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5LP",
+  "startedAt": "2026-04-20T12:34:50.000Z",
+  "appVersion": "web-2.14.3",
+  "releaseChannel": "production",
+  "client": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "locale": "en-CA",
+    "timezone": "America/Toronto",
+    "viewport": {
+      "width": 1440,
+      "height": 900,
+      "devicePixelRatio": 2
+    }
+  },
+  "userAnonId": "anon_8f2b1c4d9e"
+}

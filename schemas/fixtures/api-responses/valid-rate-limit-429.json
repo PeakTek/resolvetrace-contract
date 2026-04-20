@@ -1,0 +1,8 @@
+{
+  "error": "rate_limit_exceeded",
+  "retryAfterSeconds": 2,
+  "class": "events",
+  "dimension": "requests",
+  "scope": "tenant",
+  "requestId": "01HWZXB4BC6R0S1T2U3V4W5XYZ"
+}

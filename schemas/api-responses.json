@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.resolvetrace.com/v1/api-responses.json",
+  "title": "Standard API response shapes",
+  "description": "Error envelope, rate-limit responses, and standard headers for the ingest surface.",
+  "definitions": {
+    "ErrorCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Machine-readable error identifier (snake_case)."
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "title": "ErrorResponse",
+      "description": "Canonical error envelope returned by every ingest endpoint on non-2xx responses, unless a more specific schema is documented (e.g. 429).",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": { "$ref": "#/definitions/ErrorCode" },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "details": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "additionalProperties": true
+        }
+      }
+    },
+    "RateLimitClass": {
+      "type": "string",
+      "enum": ["events", "replay_signed_url", "replay_complete", "session"]
+    },
+    "RateLimitDimension": {
+      "type": "string",
+      "enum": ["requests", "events", "bytes"]
+    },
+    "RateLimitScope": {
+      "type": "string",
+      "enum": ["tenant", "global"]
+    },
+    "RateLimitErrorResponse": {
+      "type": "object",
+      "title": "RateLimitErrorResponse",
+      "description": "Response body returned on HTTP 429 (per-tenant throttle) and HTTP 503 (global shed).",
+      "additionalProperties": false,
+      "required": ["error", "retryAfterSeconds", "class", "scope"],
+      "properties": {
+        "error": {
+          "type": "string",
+          "enum": ["rate_limit_exceeded", "service_unavailable_shed"]
+        },
+        "retryAfterSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600
+        },
+        "class": { "$ref": "#/definitions/RateLimitClass" },
+        "dimension": { "$ref": "#/definitions/RateLimitDimension" },
+        "scope": { "$ref": "#/definitions/RateLimitScope" },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "RateLimitHeaders": {
+      "type": "object",
+      "title": "RateLimitHeaders",
+      "description": "Standard rate-limit response headers emitted on every 429 response.",
+      "additionalProperties": true,
+      "required": [
+        "Retry-After",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset"
+      ],
+      "properties": {
+        "Retry-After": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "X-RateLimit-Limit": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "X-RateLimit-Remaining": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        },
+        "X-RateLimit-Reset": {
+          "type": "string",
+          "pattern": "^\\d+$"
+        }
+      }
+    }
+  }
+}

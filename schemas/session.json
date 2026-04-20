@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.resolvetrace.com/v1/session.json",
+  "title": "Session lifecycle schemas",
+  "description": "Schemas for POST /v1/session/start and POST /v1/session/end.",
+  "definitions": {
+    "SessionClient": {
+      "type": "object",
+      "description": "Non-PII client environment metadata attached to the session.",
+      "additionalProperties": false,
+      "properties": {
+        "userAgent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 35
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "viewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20000
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20000
+            },
+            "devicePixelRatio": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 16
+            }
+          }
+        }
+      }
+    },
+    "SessionStartRequest": {
+      "type": "object",
+      "title": "SessionStartRequest",
+      "description": "Request body for `POST /v1/session/start`.",
+      "additionalProperties": false,
+      "required": ["sessionId", "startedAt"],
+      "properties": {
+        "sessionId": {
+          "$ref": "./events.json#/definitions/Ulid"
+        },
+        "startedAt": {
+          "$ref": "./events.json#/definitions/IsoDateTime"
+        },
+        "appVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "releaseChannel": {
+          "type": "string",
+          "enum": ["production", "staging", "development", "canary"]
+        },
+        "client": {
+          "$ref": "#/definitions/SessionClient"
+        },
+        "userAnonId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Customer-provided anonymous user identifier. MUST NOT be a PII value."
+        }
+      }
+    },
+    "SessionStartResponse": {
+      "type": "object",
+      "title": "SessionStartResponse",
+      "description": "Response body for `POST /v1/session/start` (HTTP 201).",
+      "additionalProperties": false,
+      "required": ["sessionId", "acceptedAt"],
+      "properties": {
+        "sessionId": {
+          "$ref": "./events.json#/definitions/Ulid"
+        },
+        "acceptedAt": {
+          "$ref": "./events.json#/definitions/IsoDateTime"
+        }
+      }
+    },
+    "SessionEndReason": {
+      "type": "string",
+      "enum": [
+        "closed",
+        "visibility_hidden",
+        "beforeunload",
+        "timeout",
+        "shutdown",
+        "error"
+      ]
+    },
+    "SessionEndRequest": {
+      "type": "object",
+      "title": "SessionEndRequest",
+      "description": "Request body for `POST /v1/session/end`.",
+      "additionalProperties": false,
+      "required": ["sessionId", "endedAt", "reason"],
+      "properties": {
+        "sessionId": {
+          "$ref": "./events.json#/definitions/Ulid"
+        },
+        "endedAt": {
+          "$ref": "./events.json#/definitions/IsoDateTime"
+        },
+        "reason": {
+          "$ref": "#/definitions/SessionEndReason"
+        },
+        "eventCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "replayChunkCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "SessionEndResponse": {
+      "type": "object",
+      "title": "SessionEndResponse",
+      "description": "Response body for `POST /v1/session/end` (HTTP 200).",
+      "additionalProperties": false,
+      "required": ["sessionId", "acceptedAt"],
+      "properties": {
+        "sessionId": {
+          "$ref": "./events.json#/definitions/Ulid"
+        },
+        "acceptedAt": {
+          "$ref": "./events.json#/definitions/IsoDateTime"
+        }
+      }
+    }
+  }
+}

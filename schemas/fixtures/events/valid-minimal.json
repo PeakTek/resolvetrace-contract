@@ -1,0 +1,19 @@
+{
+  "events": [
+    {
+      "eventId": "01HWZX9KT1N2M3J4P5Q6R7S8AB",
+      "type": "page_view",
+      "capturedAt": "2026-04-20T12:34:56.789Z",
+      "scrubber": {
+        "version": "sdk@0.1.0",
+        "rulesDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "applied": ["regex:email"],
+        "budgetExceeded": false
+      },
+      "sdk": {
+        "name": "@peaktek/resolvetrace-sdk",
+        "version": "0.1.0"
+      }
+    }
+  ]
+}

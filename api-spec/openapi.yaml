@@ -1,0 +1,452 @@
+openapi: 3.1.0
+info:
+  title: ResolveTrace Ingest API
+  version: 0.1.0
+  summary: Public ingest surface for the ResolveTrace SDK.
+  description: |
+    The ResolveTrace ingest API is the single HTTP surface that the
+    `@peaktek/resolvetrace-sdk` (TypeScript) and `resolvetrace` (Python)
+    client libraries communicate with. It accepts batched events, session
+    lifecycle signals, and replay-chunk manifests.
+
+    The same contract is served by every deployment shape — OSS self-host,
+    shared SaaS, and per-tenant hosts. Integrators change the endpoint URL
+    to migrate between deployments; no other client code changes.
+  contact:
+    name: ResolveTrace
+    url: https://resolvetrace.com
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+externalDocs:
+  description: Contract repository README
+  url: https://github.com/PeakTek/resolvetrace-contract#readme
+
+servers:
+  - url: https://ingest.resolvetrace.com
+    description: |
+      Shared SaaS ingest endpoint. Two other server shapes exist and serve
+      the identical contract documented here:
+        - `https://ingest.resolvetrace.local` — OSS self-host (Docker).
+        - `https://ingest.<tenant>.resolvetrace.com` — per-tenant host.
+      Use whichever endpoint matches the deployment your API key was issued
+      for; the SDK and request/response shapes do not change.
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: events
+    description: Event ingestion.
+  - name: replay
+    description: Replay chunk upload (signed-URL + manifest).
+  - name: session
+    description: Session lifecycle signals.
+
+paths:
+  /v1/events:
+    post:
+      tags: [events]
+      summary: Ingest a batch of events.
+      description: |
+        Accepts a batch of event envelopes. A batch contains 1 to 100
+        envelopes and is limited to 512 KiB uncompressed. Duplicate envelopes
+        (matched on `(tenant, eventId)` within the 24-hour idempotency window)
+        are processed as no-ops and counted in the response body.
+
+        Retryable status codes: 408, 429, 500, 502, 503, 504. Clients should
+        honour `Retry-After` on 429/503 and back off with jitter.
+      operationId: postEvents
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/events.json#/definitions/EventBatchRequest'
+            examples:
+              minimal:
+                summary: Single event batch
+                value:
+                  events:
+                    - eventId: 01HWZX9KT1N2M3J4P5Q6R7S8AB
+                      type: page_view
+                      capturedAt: '2026-04-20T12:34:56.789Z'
+                      scrubber:
+                        version: sdk@0.1.0
+                        rulesDigest: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+                        applied: [regex:email]
+                        budgetExceeded: false
+                      sdk:
+                        name: '@peaktek/resolvetrace-sdk'
+                        version: 0.1.0
+      responses:
+        '202':
+          description: Batch accepted for processing.
+          headers:
+            X-Idempotent-Replay:
+              description: Present and `true` when the whole batch was a duplicate no-op.
+              schema:
+                type: string
+                enum: ['true']
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/events.json#/definitions/EventBatchAcceptedResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /v1/replay/signed-url:
+    post:
+      tags: [replay]
+      summary: Issue a signed URL for a replay chunk upload.
+      description: |
+        Returns a short-lived presigned URL the SDK uses to upload a replay
+        chunk directly to object storage. The SDK must then call
+        `POST /v1/replay/complete` with the manifest entry once the upload
+        succeeds.
+      operationId: postReplaySignedUrl
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/replay.json#/definitions/ReplaySignedUrlRequest'
+      responses:
+        '201':
+          description: Signed URL issued.
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/replay.json#/definitions/ReplaySignedUrlResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /v1/replay/complete:
+    post:
+      tags: [replay]
+      summary: Declare a replay chunk manifest entry.
+      description: |
+        Posts the manifest record for a replay chunk that was successfully
+        uploaded to the signed URL returned by `POST /v1/replay/signed-url`.
+        The server verifies the object exists, byte length and checksum
+        match, and writes the manifest row durably.
+
+        Calls for the same `(sessionId, sequence)` are idempotent: a retry
+        with the identical `sha256` returns 200 with the original response
+        body. A retry with a different `sha256` is rejected with
+        `409 integrity_check_failed`.
+      operationId: postReplayComplete
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/replay.json#/definitions/ReplayManifestRequest'
+      responses:
+        '200':
+          description: Manifest accepted; chunk is durable.
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/replay.json#/definitions/ReplayManifestResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: |
+            Conflict. Common causes: the chunk failed the Stage-1 precondition
+            (`stage1_precondition_failed`), or the server-side checksum does
+            not match the `sha256` in the manifest (`integrity_check_failed`).
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/api-responses.json#/definitions/ErrorResponse'
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /v1/session/start:
+    post:
+      tags: [session]
+      summary: Open a session.
+      description: |
+        Signals that a new session has started. Called once per session,
+        before any events or replay chunks are sent under this `sessionId`.
+      operationId: postSessionStart
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/session.json#/definitions/SessionStartRequest'
+      responses:
+        '201':
+          description: Session opened.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/session.json#/definitions/SessionStartResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /v1/session/end:
+    post:
+      tags: [session]
+      summary: Close a session.
+      description: |
+        Signals that a session has ended. The server marks the session closed
+        for analytics and replay stitching. Further events or replay chunks
+        for this `sessionId` are still accepted within the idempotency window
+        but produce a diagnostic signal indicating the session was closed.
+      operationId: postSessionEnd
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/session.json#/definitions/SessionEndRequest'
+      responses:
+        '200':
+          description: Session closed.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                $ref: '../schemas/session.json#/definitions/SessionEndResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        API key provided by the ResolveTrace admin panel. Treat the string as
+        opaque: do not parse, decode, or inspect it in client code. Pass it
+        verbatim as the `Authorization: Bearer <apiKey>` header on every
+        request.
+
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: X-Idempotency-Key
+      required: false
+      description: |
+        Optional batch-level idempotency key. When present, a retry of the
+        same logical batch should reuse the same `X-Idempotency-Key` so the
+        server can short-circuit duplicate processing. Per-event dedup keyed
+        on `eventId` happens regardless of this header.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    RequestId:
+      in: header
+      name: X-Request-ID
+      required: false
+      description: |
+        Optional client-supplied correlation identifier. If absent the server
+        generates one and returns it in the response. Include the value when
+        contacting support.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+  headers:
+    X-Request-ID:
+      description: Per-request correlation identifier echoed by the server.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    X-RateLimit-Limit:
+      description: Soft limit for the class/dimension that applied.
+      schema:
+        type: string
+        pattern: '^\d+$'
+    X-RateLimit-Remaining:
+      description: Remaining tokens in the current window.
+      schema:
+        type: string
+        pattern: '^\d+$'
+    X-RateLimit-Reset:
+      description: Unix epoch seconds at which the next token is guaranteed available.
+      schema:
+        type: string
+        pattern: '^\d+$'
+    Retry-After:
+      description: Integer seconds until the client should retry.
+      schema:
+        type: string
+        pattern: '^\d+$'
+
+  responses:
+    BadRequest:
+      description: |
+        The request body failed schema validation, contained an out-of-range
+        value, or violated a documented constraint.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/X-Request-ID'
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/api-responses.json#/definitions/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid `Authorization` header.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/X-Request-ID'
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/api-responses.json#/definitions/ErrorResponse'
+    Forbidden:
+      description: |
+        Authenticated, but the key lacks the scope required for this endpoint
+        or the target resource does not belong to the authenticated tenant.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/X-Request-ID'
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/api-responses.json#/definitions/ErrorResponse'
+    PayloadTooLarge:
+      description: The request body exceeded a documented size cap.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/X-Request-ID'
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/api-responses.json#/definitions/ErrorResponse'
+    RateLimited:
+      description: |
+        Per-tenant throttle tripped. Clients MUST honour the `Retry-After`
+        header and back off with jitter. See the per-tenant limits listed
+        in the README.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/Retry-After'
+        X-RateLimit-Limit:
+          $ref: '#/components/headers/X-RateLimit-Limit'
+        X-RateLimit-Remaining:
+          $ref: '#/components/headers/X-RateLimit-Remaining'
+        X-RateLimit-Reset:
+          $ref: '#/components/headers/X-RateLimit-Reset'
+        X-Request-ID:
+          $ref: '#/components/headers/X-Request-ID'
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/api-responses.json#/definitions/RateLimitErrorResponse'
+    ServiceUnavailable:
+      description: |
+        Fleet-wide backpressure shed or a temporary downstream degradation.
+        Retry after the `Retry-After` interval with jitter.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/Retry-After'
+        X-Request-ID:
+          $ref: '#/components/headers/X-Request-ID'
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/api-responses.json#/definitions/RateLimitErrorResponse'
+    InternalError:
+      description: Unexpected server error. Safe to retry with exponential backoff.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/X-Request-ID'
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/api-responses.json#/definitions/ErrorResponse'
+
+  schemas:
+    EventBatchRequest:
+      $ref: '../schemas/events.json#/definitions/EventBatchRequest'
+    EventBatchAcceptedResponse:
+      $ref: '../schemas/events.json#/definitions/EventBatchAcceptedResponse'
+    ReplaySignedUrlRequest:
+      $ref: '../schemas/replay.json#/definitions/ReplaySignedUrlRequest'
+    ReplaySignedUrlResponse:
+      $ref: '../schemas/replay.json#/definitions/ReplaySignedUrlResponse'
+    ReplayManifestRequest:
+      $ref: '../schemas/replay.json#/definitions/ReplayManifestRequest'
+    ReplayManifestResponse:
+      $ref: '../schemas/replay.json#/definitions/ReplayManifestResponse'
+    SessionStartRequest:
+      $ref: '../schemas/session.json#/definitions/SessionStartRequest'
+    SessionStartResponse:
+      $ref: '../schemas/session.json#/definitions/SessionStartResponse'
+    SessionEndRequest:
+      $ref: '../schemas/session.json#/definitions/SessionEndRequest'
+    SessionEndResponse:
+      $ref: '../schemas/session.json#/definitions/SessionEndResponse'
+    ErrorResponse:
+      $ref: '../schemas/api-responses.json#/definitions/ErrorResponse'
+    RateLimitErrorResponse:
+      $ref: '../schemas/api-responses.json#/definitions/RateLimitErrorResponse'

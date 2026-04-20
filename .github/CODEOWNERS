@@ -1,0 +1,10 @@
+# Code owners for the ResolveTrace contract repo.
+#
+# Anything changing the SDK<->server contract (schemas, OpenAPI) or the
+# CI gate that enforces it requires Sponsor review. See the anti-drift
+# CI workflow under .github/workflows/anti-drift.yml for what is gated.
+
+# Schema + API changes require Sponsor review
+/schemas/              @casksteven
+/api-spec/             @casksteven
+/.github/              @casksteven

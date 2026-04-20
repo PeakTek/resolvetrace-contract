@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.resolvetrace.com/v1/replay.json",
+  "title": "Replay endpoint schemas",
+  "description": "Schemas for POST /v1/replay/signed-url and POST /v1/replay/complete.",
+  "definitions": {
+    "ReplaySignedUrlRequest": {
+      "type": "object",
+      "title": "ReplaySignedUrlRequest",
+      "description": "Request body for `POST /v1/replay/signed-url`.",
+      "additionalProperties": false,
+      "required": ["sessionId", "sequence", "approxBytes", "contentType"],
+      "properties": {
+        "sessionId": {
+          "$ref": "./events.json#/definitions/Ulid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonic chunk sequence number within the session, starting at 0."
+        },
+        "approxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3145728,
+          "description": "SDK estimate of chunk size, in bytes."
+        },
+        "contentType": {
+          "type": "string",
+          "const": "application/vnd.resolvetrace.replay+rrweb"
+        }
+      }
+    },
+    "ReplaySignedUrlResponse": {
+      "type": "object",
+      "title": "ReplaySignedUrlResponse",
+      "description": "Response body for `POST /v1/replay/signed-url` (HTTP 201).",
+      "additionalProperties": false,
+      "required": ["uploadUrl", "key", "expiresAt", "maxBytes", "requiredHeaders"],
+      "properties": {
+        "uploadUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expiresAt": {
+          "$ref": "./events.json#/definitions/IsoDateTime"
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3145728
+        },
+        "requiredHeaders": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      }
+    },
+    "ReplayManifestRequest": {
+      "type": "object",
+      "title": "ReplayManifestRequest",
+      "description": "Request body for `POST /v1/replay/complete`.",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "sequence",
+        "key",
+        "bytes",
+        "sha256",
+        "clientUploadedAt",
+        "scrubber"
+      ],
+      "properties": {
+        "sessionId": {
+          "$ref": "./events.json#/definitions/Ulid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3145728
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "clientUploadedAt": {
+          "$ref": "./events.json#/definitions/IsoDateTime"
+        },
+        "scrubber": {
+          "$ref": "./events.json#/definitions/ScrubberReport"
+        }
+      }
+    },
+    "ReplayManifestResponse": {
+      "type": "object",
+      "title": "ReplayManifestResponse",
+      "description": "Response body for `POST /v1/replay/complete` (HTTP 200).",
+      "additionalProperties": false,
+      "required": ["sessionId", "sequence", "acceptedAt", "durable"],
+      "properties": {
+        "sessionId": {
+          "$ref": "./events.json#/definitions/Ulid"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "acceptedAt": {
+          "$ref": "./events.json#/definitions/IsoDateTime"
+        },
+        "durable": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

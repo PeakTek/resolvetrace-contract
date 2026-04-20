@@ -1,0 +1,282 @@
+# Anti-drift CI for the ResolveTrace contract repo.
+#
+# This repo is the single source of truth for the SDK<->server contract
+# (TypeBox-authored schemas, emitted JSON Schemas, OpenAPI spec, and the
+# fixture corpus). The jobs below block PRs that would introduce drift
+# between any of those artifacts.
+#
+# Design notes for future maintainers:
+#   - Each check is a separate job so that failures surface independently
+#     in the PR UI rather than as one monolithic red X.
+#   - No job uses `continue-on-error: true` on a content check. Retries
+#     are only available for infra flakes via the standard re-run UI.
+#   - In a later wave these steps will be extracted into a reusable
+#     workflow (via `workflow_call`) so the server repos can invoke the
+#     same gate against their pinned contract version. For Wave 2 the
+#     steps are inlined for readability.
+name: anti-drift
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: anti-drift-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect lockfile
+        id: lockfile
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node 20 (with cache)
+        if: steps.lockfile.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Node 20 (no cache)
+        if: steps.lockfile.outputs.present == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  build-schemas:
+    name: build-schemas
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect lockfile
+        id: lockfile
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node 20 (with cache)
+        if: steps.lockfile.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Node 20 (no cache)
+        if: steps.lockfile.outputs.present == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Build emitted JSON Schemas
+        run: npm run build:schemas
+
+      # If the committed schemas/*.json do not match what the TypeBox
+      # sources emit, `git diff --exit-code` returns non-zero and this
+      # job fails. Rerun `npm run build:schemas` locally and commit the
+      # regenerated files.
+      - name: Check for emitted-schema drift
+        run: |
+          git diff --exit-code -- 'schemas/*.json' || {
+            echo "::error::Emitted JSON Schemas are out of sync with TypeBox sources."
+            echo "::error::Run 'npm run build:schemas' locally and commit the regenerated schemas/*.json files."
+            exit 1
+          }
+
+  validate-fixtures:
+    name: validate-fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect lockfile
+        id: lockfile
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node 20 (with cache)
+        if: steps.lockfile.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Node 20 (no cache)
+        if: steps.lockfile.outputs.present == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Validate fixture corpus against JSON Schemas
+        run: npm run validate:fixtures
+
+  validate-openapi:
+    name: validate-openapi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect lockfile
+        id: lockfile
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node 20 (with cache)
+        if: steps.lockfile.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Node 20 (no cache)
+        if: steps.lockfile.outputs.present == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Validate OpenAPI spec structure
+        run: npm run validate:openapi
+
+  oasdiff:
+    name: oasdiff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only run on PRs — a push to main has nothing to diff against.
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          path: pr
+
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+
+      - name: Skip if base OpenAPI spec is missing
+        id: guard
+        run: |
+          if [ ! -f base/api-spec/openapi.yaml ]; then
+            echo "::notice::Base branch has no api-spec/openapi.yaml yet; skipping oasdiff."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run oasdiff breaking-change check
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/specs" \
+            tufin/oasdiff:v1.11.6 \
+            breaking \
+            --fail-on ERR \
+            /specs/base/api-spec/openapi.yaml \
+            /specs/pr/api-spec/openapi.yaml
+
+      - name: Generate oasdiff changelog summary
+        if: steps.guard.outputs.skip == 'false'
+        id: changelog
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/specs" \
+            tufin/oasdiff:v1.11.6 \
+            changelog \
+            --format markdown \
+            /specs/base/api-spec/openapi.yaml \
+            /specs/pr/api-spec/openapi.yaml \
+            > changelog.md || true
+          {
+            echo 'body<<OASDIFF_EOF'
+            echo '## OpenAPI changelog (oasdiff)'
+            echo
+            if [ -s changelog.md ]; then
+              cat changelog.md
+            else
+              echo '_No detected changes to the OpenAPI surface._'
+            fi
+            echo 'OASDIFF_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment OpenAPI changelog on PR
+        if: steps.guard.outputs.skip == 'false' && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2.9.0
+        with:
+          header: oasdiff-changelog
+          message: ${{ steps.changelog.outputs.body }}

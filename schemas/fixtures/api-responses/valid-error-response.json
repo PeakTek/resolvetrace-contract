@@ -1,0 +1,5 @@
+{
+  "error": "invalid_request",
+  "message": "events[0].scrubber.rulesDigest does not match the required pattern",
+  "requestId": "01HWZXB3AZ5P0Q1R2S3T4U5VWX"
+}
