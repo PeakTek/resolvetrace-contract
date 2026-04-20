@@ -12,19 +12,19 @@ schemas/
     <module>.ts                 one file per schema module (events, session,
                                 replay, api-responses, ...)
   <module>.json                 emitted JSON Schema 2020-12 document, one per
-                                source module. Carries $schema, $id, and a
-                                `definitions` block whose keys are the TypeBox
-                                export names in that module. Committed so
-                                consumers without a TypeScript toolchain can
-                                read the contract directly.
+                                source module. Carries $schema, $id, title,
+                                description, and a `definitions` block whose
+                                keys are the TypeBox export names in that
+                                module. Committed so consumers without a
+                                TypeScript toolchain can read the contract
+                                directly.
   fixtures/
-    <module>/                         layout B (flat): fixtures here validate
-      valid-<tag>.json                against the module's primary definition
-      invalid-<tag>.json              (see "Primary definition" below)
     <module>/
-      <DefinitionName>/               layout A (per-definition): pick this
-        valid-<tag>.json              layout when one module has several
-        invalid-<tag>.json            shapes worth fixturing separately
+      <DefinitionName>/               per-definition subdirectory: every
+        valid-<tag>.json              fixture lives under the exact
+        invalid-<tag>.json            definition it is meant to validate
+                                      against. This is the standard layout
+                                      for every module.
 ```
 
 The `.ts` files in `src/` are authoritative. The `.json` files next to them
@@ -35,40 +35,46 @@ there will be overwritten on the next `npm run build:schemas`.
 
 | Command | What it does |
 | --- | --- |
-| `npm run build:schemas` | Imports every `schemas/src/<module>.ts`, collects every TypeBox export whose value has a JSON-Schema shape, and emits `schemas/<module>.json` with `$schema`, `$id`, and a `definitions` block. Idempotent. |
-| `npm run validate:fixtures` | Registers every module schema with ajv (draft 2020-12) and validates every fixture under `schemas/fixtures/<module>/<DefinitionName>/`. `valid-*` fixtures must validate; `invalid-*` fixtures must be rejected. |
+| `npm run build:schemas` | Imports every `schemas/src/<module>.ts`, collects every TypeBox export whose value has a JSON-Schema shape, and emits `schemas/<module>.json` with `$schema`, `$id`, `title`, `description`, and a `definitions` block. Idempotent. |
+| `npm run validate:fixtures` | Registers every module schema with ajv (draft 2020-12) and validates every fixture under `schemas/fixtures/<module>/<DefinitionName>/`. Fixtures named `valid-*` must validate; fixtures named `invalid-*` must be rejected. |
 | `npm run validate:openapi` | Structurally validates `../api-spec/openapi.yaml` with `@seriousme/openapi-schema-validator`. |
 | `npm run typecheck` | Runs `tsc --noEmit` over `schemas/src/**` and `scripts/**`. |
 | `npm run check:all` | Runs typecheck -> build:schemas -> validate:fixtures -> validate:openapi. Fails fast. This is the local equivalent of the CI gate. |
 
-## Module-level metadata (optional)
+## Module-level metadata
 
-If a module wants to set its emitted file's top-level `title` / `description`,
-it exports a constant named `MODULE_META`:
+Every `schemas/src/<module>.ts` file exports a constant named `MODULE_META`
+that sets the emitted file's top-level `title` and `description`:
 
 ```ts
 export const MODULE_META = {
-  title: 'Events endpoint schemas',
+  title: 'ResolveTrace event envelope and batch',
   description:
-    'Schemas for the payload of POST /v1/events and the envelope within.',
+    'Wire-format schemas for events sent to POST /v1/events, including the per-event envelope and batch request shape.',
 } as const;
 ```
 
 `MODULE_META` is the only reserved export name. Any other export whose value
 looks like a TypeBox schema is emitted under `definitions`.
 
-## Primary definition (layout B)
+## Fixture layout
 
-When fixtures sit directly under `schemas/fixtures/<module>/` (layout B),
-the fixture gate needs to pick one definition inside the module to validate
-against. Resolution order:
+Every fixture lives under a per-definition subdirectory:
 
-1. The module JSON carries a top-level `"x-primary-definition": "<Name>"`.
-   Hand-edit the emitted JSON, or have `build:schemas` preserve a custom
-   field by adding it as an extra top-level key on the module's TypeBox
-   output. **Recommended** when a module has more than one definition.
-2. The module has exactly one entry under `"definitions"`. No hint needed.
-3. Neither holds: the run fails with a diagnostic naming the fixture path.
+```
+schemas/fixtures/<module>/<DefinitionName>/valid-<tag>.json
+schemas/fixtures/<module>/<DefinitionName>/invalid-<tag>.json
+```
+
+The `<DefinitionName>` segment is the exact TypeBox export name (e.g.
+`EventBatchRequest`, `SessionStartRequest`, `RateLimitErrorResponse`). The
+fixture gate uses this directory name to pick the `#/definitions/<Name>`
+sub-schema the fixture is validated against. Files named `valid-*` must
+validate; files named `invalid-*` must be rejected.
+
+This layout is used uniformly across every module — even modules where only
+one definition is currently fixtured — so contributors always know where to
+drop a new fixture.
 
 ## When to edit what
 
@@ -78,7 +84,8 @@ against. Resolution order:
   delta explicitly.
 - **Adding a fixture:** drop it under
   `schemas/fixtures/<module>/<DefinitionName>/` using the `valid-*` /
-  `invalid-*` naming convention. Running `npm run validate:fixtures` locally
+  `invalid-*` naming convention. If the target `<DefinitionName>` directory
+  does not exist yet, create it. Running `npm run validate:fixtures` locally
   proves the fixture is classified correctly.
 - **Adding a new schema module:** create `schemas/src/<name>.ts`, re-export
   its symbols from `schemas/src/index.ts`, run `build:schemas`, add fixtures.

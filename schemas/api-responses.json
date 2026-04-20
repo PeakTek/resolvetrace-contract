@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.resolvetrace.com/v1/api-responses.json",
-  "title": "Standard API response shapes",
-  "description": "Error envelope, rate-limit responses, and standard headers for the ingest surface.",
+  "title": "ResolveTrace standard API responses",
+  "description": "Shared error and rate-limit response envelopes returned across the ingest surface, including the 429 Too Many Requests body shape.",
   "definitions": {
     "ErrorCode": {
       "type": "string",

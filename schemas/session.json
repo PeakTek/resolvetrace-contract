@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.resolvetrace.com/v1/session.json",
-  "title": "Session lifecycle schemas",
-  "description": "Schemas for POST /v1/session/start and POST /v1/session/end.",
+  "title": "ResolveTrace session lifecycle",
+  "description": "Wire-format schemas for session start and end requests and responses.",
   "definitions": {
     "SessionClient": {
       "type": "object",

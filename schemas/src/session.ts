@@ -12,6 +12,20 @@ import { Type, Static } from '@sinclair/typebox';
 import { Ulid, IsoDateTime } from './events';
 
 /* -------------------------------------------------------------------------- */
+/* Module metadata                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Module-level metadata consumed by `scripts/build-schemas.ts` — lands as
+ * top-level `title` / `description` on the emitted `schemas/session.json`.
+ */
+export const MODULE_META = {
+  title: 'ResolveTrace session lifecycle',
+  description:
+    'Wire-format schemas for session start and end requests and responses.',
+} as const;
+
+/* -------------------------------------------------------------------------- */
 /* Session metadata (non-PII)                                                 */
 /* -------------------------------------------------------------------------- */
 

@@ -15,6 +15,20 @@
 import { Type, Static } from '@sinclair/typebox';
 import { Ulid, IsoDateTime, ScrubberReport } from './events';
 
+/* -------------------------------------------------------------------------- */
+/* Module metadata                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Module-level metadata consumed by `scripts/build-schemas.ts` — lands as
+ * top-level `title` / `description` on the emitted `schemas/replay.json`.
+ */
+export const MODULE_META = {
+  title: 'ResolveTrace replay chunk upload flow',
+  description:
+    'Wire-format schemas for the two-step replay upload (POST /v1/replay/signed-url to obtain a pre-signed URL, POST /v1/replay/complete to finalize the chunk manifest).',
+} as const;
+
 const MAX_CHUNK_BYTES = 3 * 1024 * 1024;
 
 /* -------------------------------------------------------------------------- */

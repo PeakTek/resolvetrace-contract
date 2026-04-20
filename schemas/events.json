@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.resolvetrace.com/v1/events.json",
-  "title": "Events endpoint schemas",
-  "description": "Schemas for the payload of POST /v1/events and the envelope within.",
+  "title": "ResolveTrace event envelope and batch",
+  "description": "Wire-format schemas for events sent to POST /v1/events, including the per-event envelope and batch request shape.",
   "definitions": {
     "Ulid": {
       "type": "string",

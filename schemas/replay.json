@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.resolvetrace.com/v1/replay.json",
-  "title": "Replay endpoint schemas",
-  "description": "Schemas for POST /v1/replay/signed-url and POST /v1/replay/complete.",
+  "title": "ResolveTrace replay chunk upload flow",
+  "description": "Wire-format schemas for the two-step replay upload (POST /v1/replay/signed-url to obtain a pre-signed URL, POST /v1/replay/complete to finalize the chunk manifest).",
   "definitions": {
     "ReplaySignedUrlRequest": {
       "type": "object",

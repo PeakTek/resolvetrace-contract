@@ -13,6 +13,20 @@
 import { Type, Static } from '@sinclair/typebox';
 
 /* -------------------------------------------------------------------------- */
+/* Module metadata                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Module-level metadata consumed by `scripts/build-schemas.ts` — lands as
+ * top-level `title` / `description` on the emitted `schemas/events.json`.
+ */
+export const MODULE_META = {
+  title: 'ResolveTrace event envelope and batch',
+  description:
+    'Wire-format schemas for events sent to POST /v1/events, including the per-event envelope and batch request shape.',
+} as const;
+
+/* -------------------------------------------------------------------------- */
 /* Primitive field factories                                                  */
 /* -------------------------------------------------------------------------- */
 

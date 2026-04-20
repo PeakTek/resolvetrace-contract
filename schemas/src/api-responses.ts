@@ -15,6 +15,20 @@
 import { Type, Static } from '@sinclair/typebox';
 
 /* -------------------------------------------------------------------------- */
+/* Module metadata                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Module-level metadata consumed by `scripts/build-schemas.ts` — lands as
+ * top-level `title` / `description` on the emitted `schemas/api-responses.json`.
+ */
+export const MODULE_META = {
+  title: 'ResolveTrace standard API responses',
+  description:
+    'Shared error and rate-limit response envelopes returned across the ingest surface, including the 429 Too Many Requests body shape.',
+} as const;
+
+/* -------------------------------------------------------------------------- */
 /* Shared error codes                                                         */
 /* -------------------------------------------------------------------------- */
 
