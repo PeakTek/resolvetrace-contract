@@ -9,7 +9,7 @@
  */
 
 import { Type, Static } from '@sinclair/typebox';
-import { Ulid, IsoDateTime } from './events';
+import { ULID_PATTERN } from './events';
 
 /* -------------------------------------------------------------------------- */
 /* Module metadata                                                            */
@@ -24,6 +24,28 @@ export const MODULE_META = {
   description:
     'Wire-format schemas for session start and end requests and responses.',
 } as const;
+
+/* -------------------------------------------------------------------------- */
+/* Local primitive schemas (module-private; see schemas/README.md)            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Local ULID primitive. Kept in sync with `events.ts`'s `Ulid` via the shared
+ * `ULID_PATTERN` string. The emitter inlines this schema at every use-site,
+ * so each module's JSON is self-contained with no cross-module `$ref`s.
+ */
+const Ulid = Type.String({
+  format: 'ulid',
+  pattern: ULID_PATTERN,
+  description:
+    'ULID (Crockford base32, 26 chars). Generated client-side by the SDK at capture time and preserved across retries.',
+});
+
+/** Local ISO-8601 timestamp primitive. See the note on `Ulid` above. */
+const IsoDateTime = Type.String({
+  format: 'date-time',
+  description: 'ISO-8601 / RFC 3339 timestamp (UTC recommended).',
+});
 
 /* -------------------------------------------------------------------------- */
 /* Session metadata (non-PII)                                                 */
@@ -92,7 +114,7 @@ export const ReleaseChannel = Type.Union(
 
 export const SessionStartRequest = Type.Object(
   {
-    sessionId: Ulid(),
+    sessionId: Ulid,
     startedAt: Type.String({
       format: 'date-time',
       description: 'Client wall-clock at session start.',
@@ -116,7 +138,6 @@ export const SessionStartRequest = Type.Object(
     ),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/session-start-request.json',
     additionalProperties: false,
     title: 'SessionStartRequest',
     description: 'Request body for `POST /v1/session/start`.',
@@ -126,11 +147,10 @@ export type SessionStartRequest = Static<typeof SessionStartRequest>;
 
 export const SessionStartResponse = Type.Object(
   {
-    sessionId: Ulid(),
-    acceptedAt: IsoDateTime(),
+    sessionId: Ulid,
+    acceptedAt: IsoDateTime,
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/session-start-response.json',
     additionalProperties: false,
     title: 'SessionStartResponse',
     description: 'Response body for `POST /v1/session/start` (HTTP 201).',
@@ -159,7 +179,7 @@ export const SessionEndReason = Type.Union(
 
 export const SessionEndRequest = Type.Object(
   {
-    sessionId: Ulid(),
+    sessionId: Ulid,
     endedAt: Type.String({
       format: 'date-time',
       description: 'Client wall-clock at session end.',
@@ -180,7 +200,6 @@ export const SessionEndRequest = Type.Object(
     ),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/session-end-request.json',
     additionalProperties: false,
     title: 'SessionEndRequest',
     description: 'Request body for `POST /v1/session/end`.',
@@ -190,11 +209,10 @@ export type SessionEndRequest = Static<typeof SessionEndRequest>;
 
 export const SessionEndResponse = Type.Object(
   {
-    sessionId: Ulid(),
-    acceptedAt: IsoDateTime(),
+    sessionId: Ulid,
+    acceptedAt: IsoDateTime,
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/session-end-response.json',
     additionalProperties: false,
     title: 'SessionEndResponse',
     description: 'Response body for `POST /v1/session/end` (HTTP 200).',

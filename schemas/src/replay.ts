@@ -13,7 +13,7 @@
  */
 
 import { Type, Static } from '@sinclair/typebox';
-import { Ulid, IsoDateTime, ScrubberReport } from './events';
+import { ScrubberReport, ULID_PATTERN } from './events';
 
 /* -------------------------------------------------------------------------- */
 /* Module metadata                                                            */
@@ -29,6 +29,28 @@ export const MODULE_META = {
     'Wire-format schemas for the two-step replay upload (POST /v1/replay/signed-url to obtain a pre-signed URL, POST /v1/replay/complete to finalize the chunk manifest).',
 } as const;
 
+/* -------------------------------------------------------------------------- */
+/* Local primitive schemas (module-private; see schemas/README.md)            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Local ULID primitive. Kept in sync with `events.ts`'s `Ulid` via the shared
+ * `ULID_PATTERN` string. The emitter inlines this schema at every use-site,
+ * so each module's JSON is self-contained with no cross-module `$ref`s.
+ */
+const Ulid = Type.String({
+  format: 'ulid',
+  pattern: ULID_PATTERN,
+  description:
+    'ULID (Crockford base32, 26 chars). Generated client-side by the SDK at capture time and preserved across retries.',
+});
+
+/** Local ISO-8601 timestamp primitive. See the note on `Ulid` above. */
+const IsoDateTime = Type.String({
+  format: 'date-time',
+  description: 'ISO-8601 / RFC 3339 timestamp (UTC recommended).',
+});
+
 const MAX_CHUNK_BYTES = 3 * 1024 * 1024;
 
 /* -------------------------------------------------------------------------- */
@@ -37,7 +59,7 @@ const MAX_CHUNK_BYTES = 3 * 1024 * 1024;
 
 export const ReplaySignedUrlRequest = Type.Object(
   {
-    sessionId: Ulid(),
+    sessionId: Ulid,
     sequence: Type.Integer({
       minimum: 0,
       description:
@@ -54,7 +76,6 @@ export const ReplaySignedUrlRequest = Type.Object(
     }),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/replay-signed-url-request.json',
     additionalProperties: false,
     title: 'ReplaySignedUrlRequest',
     description: 'Request body for `POST /v1/replay/signed-url`.',
@@ -93,7 +114,6 @@ export const ReplaySignedUrlResponse = Type.Object(
     ),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/replay-signed-url-response.json',
     additionalProperties: false,
     title: 'ReplaySignedUrlResponse',
     description: 'Response body for `POST /v1/replay/signed-url` (HTTP 201).',
@@ -107,7 +127,7 @@ export type ReplaySignedUrlResponse = Static<typeof ReplaySignedUrlResponse>;
 
 export const ReplayManifestRequest = Type.Object(
   {
-    sessionId: Ulid(),
+    sessionId: Ulid,
     sequence: Type.Integer({ minimum: 0 }),
     key: Type.String({
       minLength: 1,
@@ -123,11 +143,10 @@ export const ReplayManifestRequest = Type.Object(
       pattern: '^[a-f0-9]{64}$',
       description: 'Lower-case hex SHA-256 of the chunk body.',
     }),
-    clientUploadedAt: IsoDateTime(),
+    clientUploadedAt: IsoDateTime,
     scrubber: ScrubberReport,
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/replay-manifest-request.json',
     additionalProperties: false,
     title: 'ReplayManifestRequest',
     description: 'Request body for `POST /v1/replay/complete`.',
@@ -137,16 +156,15 @@ export type ReplayManifestRequest = Static<typeof ReplayManifestRequest>;
 
 export const ReplayManifestResponse = Type.Object(
   {
-    sessionId: Ulid(),
+    sessionId: Ulid,
     sequence: Type.Integer({ minimum: 0 }),
-    acceptedAt: IsoDateTime(),
+    acceptedAt: IsoDateTime,
     durable: Type.Boolean({
       description:
         'True once the manifest row has been durably written. Always true on a 200/201 response.',
     }),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/replay-manifest-response.json',
     additionalProperties: false,
     title: 'ReplayManifestResponse',
     description: 'Response body for `POST /v1/replay/complete` (HTTP 200).',

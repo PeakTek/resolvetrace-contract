@@ -27,27 +27,37 @@ export const MODULE_META = {
 } as const;
 
 /* -------------------------------------------------------------------------- */
-/* Primitive field factories                                                  */
+/* Shared primitive patterns                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Crockford base32 (26 chars, excluding I/L/O/U). Shared as a plain string so
+ * each module that inlines a `Ulid`-shaped primitive stays in sync without
+ * importing schema values across modules (which would cause the build emitter
+ * to inline duplicate sub-schemas).
+ */
+export const ULID_PATTERN = '^[0-9A-HJKMNP-TV-Z]{26}$';
+
+/* -------------------------------------------------------------------------- */
+/* Primitive field schemas                                                    */
 /* -------------------------------------------------------------------------- */
 
 /**
  * ULID (Crockford base32, 26 chars). Generated client-side by the SDK at
  * capture time and preserved across retries.
  */
-export const Ulid = () =>
-  Type.String({
-    format: 'ulid',
-    pattern: '^[0-9A-HJKMNP-TV-Z]{26}$',
-    description:
-      'ULID (Crockford base32, 26 chars). Generated client-side by the SDK at capture time and preserved across retries.',
-  });
+export const Ulid = Type.String({
+  format: 'ulid',
+  pattern: ULID_PATTERN,
+  description:
+    'ULID (Crockford base32, 26 chars). Generated client-side by the SDK at capture time and preserved across retries.',
+});
 
 /** ISO-8601 / RFC 3339 timestamp (UTC recommended). */
-export const IsoDateTime = () =>
-  Type.String({
-    format: 'date-time',
-    description: 'ISO-8601 / RFC 3339 timestamp (UTC recommended).',
-  });
+export const IsoDateTime = Type.String({
+  format: 'date-time',
+  description: 'ISO-8601 / RFC 3339 timestamp (UTC recommended).',
+});
 
 /* -------------------------------------------------------------------------- */
 /* Scrubber report                                                            */
@@ -89,7 +99,6 @@ export const ScrubberReport = Type.Object(
     ),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/scrubber-report.json',
     additionalProperties: false,
     description: 'Client-side scrubber application report.',
   },
@@ -164,11 +173,11 @@ export type SdkIdentity = Static<typeof SdkIdentity>;
 
 export const EventEnvelope = Type.Object(
   {
-    eventId: Ulid(),
+    eventId: Ulid,
     sessionId: Type.Optional(
       Type.String({
         format: 'ulid',
-        pattern: '^[0-9A-HJKMNP-TV-Z]{26}$',
+        pattern: ULID_PATTERN,
         description:
           'Optional session correlation ULID. Required on events that belong to a replay session.',
       }),
@@ -190,7 +199,6 @@ export const EventEnvelope = Type.Object(
     sdk: SdkIdentity,
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/event-envelope.json',
     additionalProperties: false,
     title: 'EventEnvelope',
     description:
@@ -213,7 +221,6 @@ export const EventBatchRequest = Type.Object(
     }),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/event-batch-request.json',
     additionalProperties: false,
     title: 'EventBatchRequest',
     description: 'Request body for `POST /v1/events`.',
@@ -232,10 +239,9 @@ export const EventBatchAcceptedResponse = Type.Object(
       description:
         'Number of events matched in the idempotency window and processed as no-ops.',
     }),
-    receivedAt: IsoDateTime(),
+    receivedAt: IsoDateTime,
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/event-batch-accepted-response.json',
     additionalProperties: false,
     title: 'EventBatchAcceptedResponse',
     description: 'Success response body for `POST /v1/events` (HTTP 202).',

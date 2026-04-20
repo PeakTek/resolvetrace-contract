@@ -4,149 +4,345 @@
   "title": "ResolveTrace session lifecycle",
   "description": "Wire-format schemas for session start and end requests and responses.",
   "definitions": {
+    "ReleaseChannel": {
+      "description": "Customer-reported release channel. The authoritative environment is derived from the API key, not this field.",
+      "anyOf": [
+        {
+          "const": "production",
+          "type": "string"
+        },
+        {
+          "const": "staging",
+          "type": "string"
+        },
+        {
+          "const": "development",
+          "type": "string"
+        },
+        {
+          "const": "canary",
+          "type": "string"
+        }
+      ]
+    },
     "SessionClient": {
-      "type": "object",
-      "description": "Non-PII client environment metadata attached to the session.",
       "additionalProperties": false,
+      "description": "Non-PII client environment metadata attached to the session for analytics.",
+      "type": "object",
       "properties": {
         "userAgent": {
-          "type": "string",
           "minLength": 1,
-          "maxLength": 512
+          "maxLength": 512,
+          "description": "Client User-Agent string as reported by the host environment.",
+          "type": "string"
         },
         "locale": {
-          "type": "string",
           "minLength": 2,
-          "maxLength": 35
+          "maxLength": 35,
+          "description": "BCP 47 locale tag (e.g. \"en-CA\", \"fr-FR\").",
+          "type": "string"
         },
         "timezone": {
-          "type": "string",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 64,
+          "description": "IANA timezone identifier (e.g. \"America/Toronto\"). Optional.",
+          "type": "string"
         },
         "viewport": {
-          "type": "object",
           "additionalProperties": false,
-          "required": ["width", "height"],
+          "type": "object",
           "properties": {
             "width": {
-              "type": "integer",
               "minimum": 0,
-              "maximum": 20000
+              "maximum": 20000,
+              "type": "integer"
             },
             "height": {
-              "type": "integer",
               "minimum": 0,
-              "maximum": 20000
+              "maximum": 20000,
+              "type": "integer"
             },
             "devicePixelRatio": {
-              "type": "number",
               "minimum": 0,
-              "maximum": 16
+              "maximum": 16,
+              "type": "number"
             }
-          }
-        }
-      }
-    },
-    "SessionStartRequest": {
-      "type": "object",
-      "title": "SessionStartRequest",
-      "description": "Request body for `POST /v1/session/start`.",
-      "additionalProperties": false,
-      "required": ["sessionId", "startedAt"],
-      "properties": {
-        "sessionId": {
-          "$ref": "./events.json#/definitions/Ulid"
-        },
-        "startedAt": {
-          "$ref": "./events.json#/definitions/IsoDateTime"
-        },
-        "appVersion": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "releaseChannel": {
-          "type": "string",
-          "enum": ["production", "staging", "development", "canary"]
-        },
-        "client": {
-          "$ref": "#/definitions/SessionClient"
-        },
-        "userAnonId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "description": "Customer-provided anonymous user identifier. MUST NOT be a PII value."
-        }
-      }
-    },
-    "SessionStartResponse": {
-      "type": "object",
-      "title": "SessionStartResponse",
-      "description": "Response body for `POST /v1/session/start` (HTTP 201).",
-      "additionalProperties": false,
-      "required": ["sessionId", "acceptedAt"],
-      "properties": {
-        "sessionId": {
-          "$ref": "./events.json#/definitions/Ulid"
-        },
-        "acceptedAt": {
-          "$ref": "./events.json#/definitions/IsoDateTime"
+          },
+          "required": [
+            "width",
+            "height"
+          ]
         }
       }
     },
     "SessionEndReason": {
-      "type": "string",
-      "enum": [
-        "closed",
-        "visibility_hidden",
-        "beforeunload",
-        "timeout",
-        "shutdown",
-        "error"
+      "description": "Why the session ended. Informational; does not change server processing.",
+      "anyOf": [
+        {
+          "const": "closed",
+          "type": "string"
+        },
+        {
+          "const": "visibility_hidden",
+          "type": "string"
+        },
+        {
+          "const": "beforeunload",
+          "type": "string"
+        },
+        {
+          "const": "timeout",
+          "type": "string"
+        },
+        {
+          "const": "shutdown",
+          "type": "string"
+        },
+        {
+          "const": "error",
+          "type": "string"
+        }
       ]
     },
     "SessionEndRequest": {
-      "type": "object",
+      "additionalProperties": false,
       "title": "SessionEndRequest",
       "description": "Request body for `POST /v1/session/end`.",
-      "additionalProperties": false,
-      "required": ["sessionId", "endedAt", "reason"],
+      "type": "object",
       "properties": {
         "sessionId": {
-          "$ref": "./events.json#/definitions/Ulid"
+          "format": "ulid",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID (Crockford base32, 26 chars). Generated client-side by the SDK at capture time and preserved across retries.",
+          "type": "string"
         },
         "endedAt": {
-          "$ref": "./events.json#/definitions/IsoDateTime"
+          "format": "date-time",
+          "description": "Client wall-clock at session end.",
+          "type": "string"
         },
         "reason": {
-          "$ref": "#/definitions/SessionEndReason"
+          "description": "Why the session ended. Informational; does not change server processing.",
+          "anyOf": [
+            {
+              "const": "closed",
+              "type": "string"
+            },
+            {
+              "const": "visibility_hidden",
+              "type": "string"
+            },
+            {
+              "const": "beforeunload",
+              "type": "string"
+            },
+            {
+              "const": "timeout",
+              "type": "string"
+            },
+            {
+              "const": "shutdown",
+              "type": "string"
+            },
+            {
+              "const": "error",
+              "type": "string"
+            }
+          ]
         },
         "eventCount": {
-          "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Client-side count of events captured in this session. Used for reconciliation diagnostics.",
+          "type": "integer"
         },
         "replayChunkCount": {
-          "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Client-side count of replay chunks uploaded in this session.",
+          "type": "integer"
         }
-      }
+      },
+      "required": [
+        "sessionId",
+        "endedAt",
+        "reason"
+      ]
     },
     "SessionEndResponse": {
-      "type": "object",
+      "additionalProperties": false,
       "title": "SessionEndResponse",
       "description": "Response body for `POST /v1/session/end` (HTTP 200).",
-      "additionalProperties": false,
-      "required": ["sessionId", "acceptedAt"],
+      "type": "object",
       "properties": {
         "sessionId": {
-          "$ref": "./events.json#/definitions/Ulid"
+          "format": "ulid",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID (Crockford base32, 26 chars). Generated client-side by the SDK at capture time and preserved across retries.",
+          "type": "string"
         },
         "acceptedAt": {
-          "$ref": "./events.json#/definitions/IsoDateTime"
+          "format": "date-time",
+          "description": "ISO-8601 / RFC 3339 timestamp (UTC recommended).",
+          "type": "string"
         }
-      }
+      },
+      "required": [
+        "sessionId",
+        "acceptedAt"
+      ]
+    },
+    "SessionStartRequest": {
+      "additionalProperties": false,
+      "title": "SessionStartRequest",
+      "description": "Request body for `POST /v1/session/start`.",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "format": "ulid",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID (Crockford base32, 26 chars). Generated client-side by the SDK at capture time and preserved across retries.",
+          "type": "string"
+        },
+        "startedAt": {
+          "format": "date-time",
+          "description": "Client wall-clock at session start.",
+          "type": "string"
+        },
+        "appVersion": {
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Customer-reported application version (free-form string).",
+          "type": "string"
+        },
+        "releaseChannel": {
+          "description": "Customer-reported release channel. The authoritative environment is derived from the API key, not this field.",
+          "anyOf": [
+            {
+              "const": "production",
+              "type": "string"
+            },
+            {
+              "const": "staging",
+              "type": "string"
+            },
+            {
+              "const": "development",
+              "type": "string"
+            },
+            {
+              "const": "canary",
+              "type": "string"
+            }
+          ]
+        },
+        "client": {
+          "additionalProperties": false,
+          "description": "Non-PII client environment metadata attached to the session for analytics.",
+          "type": "object",
+          "properties": {
+            "userAgent": {
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "Client User-Agent string as reported by the host environment.",
+              "type": "string"
+            },
+            "locale": {
+              "minLength": 2,
+              "maxLength": 35,
+              "description": "BCP 47 locale tag (e.g. \"en-CA\", \"fr-FR\").",
+              "type": "string"
+            },
+            "timezone": {
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "IANA timezone identifier (e.g. \"America/Toronto\"). Optional.",
+              "type": "string"
+            },
+            "viewport": {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "width": {
+                  "minimum": 0,
+                  "maximum": 20000,
+                  "type": "integer"
+                },
+                "height": {
+                  "minimum": 0,
+                  "maximum": 20000,
+                  "type": "integer"
+                },
+                "devicePixelRatio": {
+                  "minimum": 0,
+                  "maximum": 16,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "width",
+                "height"
+              ]
+            }
+          }
+        },
+        "userAnonId": {
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Customer-provided anonymous user identifier. Opaque to the server; MUST NOT be a PII value.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "startedAt"
+      ]
+    },
+    "SessionStartResponse": {
+      "additionalProperties": false,
+      "title": "SessionStartResponse",
+      "description": "Response body for `POST /v1/session/start` (HTTP 201).",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "format": "ulid",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID (Crockford base32, 26 chars). Generated client-side by the SDK at capture time and preserved across retries.",
+          "type": "string"
+        },
+        "acceptedAt": {
+          "format": "date-time",
+          "description": "ISO-8601 / RFC 3339 timestamp (UTC recommended).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "acceptedAt"
+      ]
+    },
+    "SessionViewport": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "width": {
+          "minimum": 0,
+          "maximum": 20000,
+          "type": "integer"
+        },
+        "height": {
+          "minimum": 0,
+          "maximum": 20000,
+          "type": "integer"
+        },
+        "devicePixelRatio": {
+          "minimum": 0,
+          "maximum": 16,
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ]
     }
   }
 }

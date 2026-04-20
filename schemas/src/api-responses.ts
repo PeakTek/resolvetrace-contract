@@ -92,7 +92,6 @@ export const ErrorResponse = Type.Object(
     ),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/error-response.json',
     additionalProperties: false,
     title: 'ErrorResponse',
     description:
@@ -158,7 +157,6 @@ export const RateLimitErrorResponse = Type.Object(
     ),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/rate-limit-error-response.json',
     additionalProperties: false,
     title: 'RateLimitErrorResponse',
     description:
@@ -196,7 +194,6 @@ export const RateLimitHeaders = Type.Object(
     }),
   },
   {
-    $id: 'https://schemas.resolvetrace.com/v1/rate-limit-headers.json',
     additionalProperties: true,
     title: 'RateLimitHeaders',
     description:

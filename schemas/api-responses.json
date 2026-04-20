@@ -5,108 +5,222 @@
   "description": "Shared error and rate-limit response envelopes returned across the ingest surface, including the 429 Too Many Requests body shape.",
   "definitions": {
     "ErrorCode": {
-      "type": "string",
       "minLength": 1,
       "maxLength": 64,
       "pattern": "^[a-z][a-z0-9_]*$",
-      "description": "Machine-readable error identifier (snake_case)."
+      "description": "Machine-readable error identifier (snake_case).",
+      "type": "string"
     },
     "ErrorResponse": {
-      "type": "object",
+      "additionalProperties": false,
       "title": "ErrorResponse",
       "description": "Canonical error envelope returned by every ingest endpoint on non-2xx responses, unless a more specific schema is documented (e.g. 429).",
-      "additionalProperties": false,
-      "required": ["error"],
-      "properties": {
-        "error": { "$ref": "#/definitions/ErrorCode" },
-        "message": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 512
-        },
-        "requestId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
-        },
-        "details": {
-          "type": "object",
-          "propertyNames": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "additionalProperties": true
-        }
-      }
-    },
-    "RateLimitClass": {
-      "type": "string",
-      "enum": ["events", "replay_signed_url", "replay_complete", "session"]
-    },
-    "RateLimitDimension": {
-      "type": "string",
-      "enum": ["requests", "events", "bytes"]
-    },
-    "RateLimitScope": {
-      "type": "string",
-      "enum": ["tenant", "global"]
-    },
-    "RateLimitErrorResponse": {
       "type": "object",
-      "title": "RateLimitErrorResponse",
-      "description": "Response body returned on HTTP 429 (per-tenant throttle) and HTTP 503 (global shed).",
-      "additionalProperties": false,
-      "required": ["error", "retryAfterSeconds", "class", "scope"],
       "properties": {
         "error": {
-          "type": "string",
-          "enum": ["rate_limit_exceeded", "service_unavailable_shed"]
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Machine-readable error identifier (snake_case).",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "Human-readable message. Never contains tenant-identifying data.",
+          "type": "string"
+        },
+        "requestId": {
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Per-request correlation identifier, echoed from the `X-Request-ID` response header. Include this when contacting support.",
+          "type": "string"
+        },
+        "details": {
+          "description": "Optional structured details. Shape depends on `error`; consult endpoint docs.",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {}
+          }
+        }
+      },
+      "required": [
+        "error"
+      ]
+    },
+    "RateLimitClass": {
+      "description": "Which ingest request class tripped the limit.",
+      "anyOf": [
+        {
+          "const": "events",
+          "type": "string"
+        },
+        {
+          "const": "replay_signed_url",
+          "type": "string"
+        },
+        {
+          "const": "replay_complete",
+          "type": "string"
+        },
+        {
+          "const": "session",
+          "type": "string"
+        }
+      ]
+    },
+    "RateLimitDimension": {
+      "description": "Which dimension of the class was exceeded — request count, event count, or payload bytes.",
+      "anyOf": [
+        {
+          "const": "requests",
+          "type": "string"
+        },
+        {
+          "const": "events",
+          "type": "string"
+        },
+        {
+          "const": "bytes",
+          "type": "string"
+        }
+      ]
+    },
+    "RateLimitErrorResponse": {
+      "additionalProperties": false,
+      "title": "RateLimitErrorResponse",
+      "description": "Response body returned on HTTP 429 (per-tenant throttle) and HTTP 503 (global shed). Clients should honour the `Retry-After` header and back off with jitter.",
+      "type": "object",
+      "properties": {
+        "error": {
+          "description": "Rate-limit error identifier.",
+          "anyOf": [
+            {
+              "const": "rate_limit_exceeded",
+              "type": "string"
+            },
+            {
+              "const": "service_unavailable_shed",
+              "type": "string"
+            }
+          ]
         },
         "retryAfterSeconds": {
-          "type": "integer",
           "minimum": 0,
-          "maximum": 3600
+          "maximum": 3600,
+          "description": "Integer seconds until the next request is expected to succeed. Mirrors the `Retry-After` header.",
+          "type": "integer"
         },
-        "class": { "$ref": "#/definitions/RateLimitClass" },
-        "dimension": { "$ref": "#/definitions/RateLimitDimension" },
-        "scope": { "$ref": "#/definitions/RateLimitScope" },
+        "class": {
+          "description": "Which ingest request class tripped the limit.",
+          "anyOf": [
+            {
+              "const": "events",
+              "type": "string"
+            },
+            {
+              "const": "replay_signed_url",
+              "type": "string"
+            },
+            {
+              "const": "replay_complete",
+              "type": "string"
+            },
+            {
+              "const": "session",
+              "type": "string"
+            }
+          ]
+        },
+        "dimension": {
+          "description": "Which dimension of the class was exceeded — request count, event count, or payload bytes.",
+          "anyOf": [
+            {
+              "const": "requests",
+              "type": "string"
+            },
+            {
+              "const": "events",
+              "type": "string"
+            },
+            {
+              "const": "bytes",
+              "type": "string"
+            }
+          ]
+        },
+        "scope": {
+          "description": "`tenant` for 429 (per-tenant bucket); `global` for 503 (fleet-wide shed).",
+          "anyOf": [
+            {
+              "const": "tenant",
+              "type": "string"
+            },
+            {
+              "const": "global",
+              "type": "string"
+            }
+          ]
+        },
         "requestId": {
-          "type": "string",
           "minLength": 1,
-          "maxLength": 128
+          "maxLength": 128,
+          "type": "string"
         }
-      }
+      },
+      "required": [
+        "error",
+        "retryAfterSeconds",
+        "class",
+        "scope"
+      ]
     },
     "RateLimitHeaders": {
-      "type": "object",
-      "title": "RateLimitHeaders",
-      "description": "Standard rate-limit response headers emitted on every 429 response.",
       "additionalProperties": true,
+      "title": "RateLimitHeaders",
+      "description": "Standard rate-limit response headers emitted on every 429 response (and alongside 200 responses when a tenant is approaching its limit).",
+      "type": "object",
+      "properties": {
+        "Retry-After": {
+          "pattern": "^\\d+$",
+          "description": "Integer seconds until the next request is expected to succeed.",
+          "type": "string"
+        },
+        "X-RateLimit-Limit": {
+          "pattern": "^\\d+$",
+          "description": "Soft limit for the class/dimension that tripped.",
+          "type": "string"
+        },
+        "X-RateLimit-Remaining": {
+          "pattern": "^\\d+$",
+          "description": "Remaining tokens in the current window (0 on 429).",
+          "type": "string"
+        },
+        "X-RateLimit-Reset": {
+          "pattern": "^\\d+$",
+          "description": "Unix epoch seconds at which the next token is guaranteed available.",
+          "type": "string"
+        }
+      },
       "required": [
         "Retry-After",
         "X-RateLimit-Limit",
         "X-RateLimit-Remaining",
         "X-RateLimit-Reset"
-      ],
-      "properties": {
-        "Retry-After": {
-          "type": "string",
-          "pattern": "^\\d+$"
+      ]
+    },
+    "RateLimitScope": {
+      "description": "`tenant` for 429 (per-tenant bucket); `global` for 503 (fleet-wide shed).",
+      "anyOf": [
+        {
+          "const": "tenant",
+          "type": "string"
         },
-        "X-RateLimit-Limit": {
-          "type": "string",
-          "pattern": "^\\d+$"
-        },
-        "X-RateLimit-Remaining": {
-          "type": "string",
-          "pattern": "^\\d+$"
-        },
-        "X-RateLimit-Reset": {
-          "type": "string",
-          "pattern": "^\\d+$"
+        {
+          "const": "global",
+          "type": "string"
         }
-      }
+      ]
     }
   }
 }

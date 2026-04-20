@@ -2,7 +2,7 @@
   "events": [
     {
       "eventId": "01HWZXA0P0A1B2C3D4E5F6G7H8",
-      "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5LP",
+      "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5MP",
       "type": "app.checkout.completed",
       "capturedAt": "2026-04-20T12:35:01.000Z",
       "attributes": {
@@ -31,7 +31,7 @@
     },
     {
       "eventId": "01HWZXA1Q0B2C3D4E5F6G7H8J9",
-      "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5LP",
+      "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5MP",
       "type": "dom.click",
       "capturedAt": "2026-04-20T12:35:02.150Z",
       "attributes": {

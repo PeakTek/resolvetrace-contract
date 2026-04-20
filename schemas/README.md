@@ -57,6 +57,35 @@ export const MODULE_META = {
 `MODULE_META` is the only reserved export name. Any other export whose value
 looks like a TypeBox schema is emitted under `definitions`.
 
+## Authoring convention: schema values, not factories
+
+Declare each schema as a TypeBox **value**, not a factory function:
+
+```ts
+// yes — value (idiomatic TypeBox)
+export const Ulid = Type.String({ pattern: '...', format: 'ulid' });
+
+// no — factory (emitter treats functions as non-schema and drops them)
+export const Ulid = () => Type.String({ pattern: '...', format: 'ulid' });
+```
+
+The emitter's shape check skips function-valued exports, so a factory never
+lands in the emitted JSON. Using schema values also lets `Static<typeof X>`
+and call-sites read naturally (`sessionId: Ulid`, not `sessionId: Ulid()`).
+
+For **primitives shared across modules** (`Ulid`, `IsoDateTime`), prefer a
+module-local `const` plus a shared pattern string rather than importing a
+schema value across modules. Example: `events.ts` exports `ULID_PATTERN` as a
+plain string, and `session.ts` / `replay.ts` each declare a module-private
+`const Ulid = Type.String({ pattern: ULID_PATTERN, ... })`. This keeps each
+emitted `schemas/<module>.json` self-contained (no cross-module `$ref`s) while
+the string constant guarantees the pattern stays in lockstep.
+
+Do not attach `$id` to sub-schemas inside an `Type.Object(..., { $id })`
+options bag. The emitter gives each module a single top-level `$id` from its
+basename; nested `$id`s would collide when the same sub-schema is inlined at
+multiple use-sites.
+
 ## Fixture layout
 
 Every fixture lives under a per-definition subdirectory:
