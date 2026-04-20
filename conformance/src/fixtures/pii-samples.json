@@ -1,0 +1,55 @@
+{
+  "$comment": "Synthetic PII samples used by the masking-parity case. Values are fabricated — Luhn-valid card and SIN are synthesized for checksum exercises and are NOT real account numbers.",
+  "samples": [
+    {
+      "id": "email-basic",
+      "description": "Email addresses in freeform text are redacted by the regex:email rule",
+      "attributes": {
+        "supportMessage": "Please reach out to me at test.user@example.com — thanks!",
+        "contactEmail": "plain@example.org"
+      },
+      "expectedApplied": ["regex:email"]
+    },
+    {
+      "id": "ssn-us",
+      "description": "US SSN in strict 3-2-4 format is redacted",
+      "attributes": {
+        "note": "My SSN is 123-45-6789 for the form"
+      },
+      "expectedApplied": ["regex:ssn_us"]
+    },
+    {
+      "id": "sin-ca-luhn",
+      "description": "Canadian SIN that passes Luhn is redacted; 9-digit non-Luhn strings are left alone",
+      "attributes": {
+        "valid": "SIN on file: 046-454-286",
+        "benign": "Order reference 123-456-789"
+      },
+      "expectedApplied": ["regex:sin_ca"]
+    },
+    {
+      "id": "cc-luhn",
+      "description": "Credit-card candidates that pass Luhn are redacted",
+      "attributes": {
+        "paymentNote": "Card 4242 4242 4242 4242 authorized"
+      },
+      "expectedApplied": ["regex:credit_card"]
+    },
+    {
+      "id": "phone-e164",
+      "description": "E.164 phone numbers are redacted",
+      "attributes": {
+        "phone": "Call +14165551234 between 9 and 5"
+      },
+      "expectedApplied": ["regex:phone_e164"]
+    },
+    {
+      "id": "combined",
+      "description": "Multiple rules fire on the same event when independent PII is present",
+      "attributes": {
+        "message": "Reach me at combo@example.com or +15551230000; my card 4242424242424242 is on file."
+      },
+      "expectedApplied": ["regex:email", "regex:phone_e164", "regex:credit_card"]
+    }
+  ]
+}

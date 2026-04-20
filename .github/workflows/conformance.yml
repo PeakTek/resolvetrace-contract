@@ -1,0 +1,99 @@
+# Conformance harness job.
+#
+# This workflow runs the black-box suite under `conformance/` against a
+# containerized OSS ingest server. The image referenced below
+# (`ghcr.io/peaktek/resolvetrace-core:latest`) is produced by the
+# `resolvetrace-core` repository in a later wave; until that pipeline
+# exists, the job is allowed to soft-fail (`continue-on-error: true`) so
+# this workflow can be merged without blocking anti-drift.
+#
+# Once the prebuilt image is published, flip `continue-on-error` to `false`
+# and remove the "notice" step — the job will then be a first-class gate.
+name: conformance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    name: black-box conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Soft-fail until the server image is published. See header comment.
+    continue-on-error: true
+
+    services:
+      ingest:
+        # Image is produced from the resolvetrace-core repo. When it is
+        # published, this service block will transparently pull the pinned
+        # tag and expose it to the harness step below on ingest:8080.
+        image: ghcr.io/peaktek/resolvetrace-core:latest
+        env:
+          # Match the OSS defaults so the harness API key is correctly
+          # scoped by the server's env-driven auth provider.
+          RESOLVETRACE_API_KEY: rt_ci_conformance_key
+          RESOLVETRACE_BIND: '0.0.0.0:8080'
+        ports:
+          - 8080:8080
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:8080/healthz || exit 1"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Notice (server image prerequisite)
+        run: |
+          echo "::notice::This job soft-fails until the OSS server image is published."
+          echo "::notice::See conformance.yml header comment for the flip-to-gate instructions."
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install root TypeScript deps
+        run: npm install --no-audit --no-fund
+
+      - name: Install SDK TypeScript deps
+        working-directory: sdk/typescript
+        run: npm install --no-audit --no-fund
+
+      - name: Build TypeScript SDK
+        working-directory: sdk/typescript
+        run: npm run build
+
+      - name: Install Python SDK (editable)
+        working-directory: sdk/python
+        run: python -m pip install -e .
+
+      - name: Install conformance harness deps
+        working-directory: conformance
+        run: npm install --no-audit --no-fund
+
+      - name: Run conformance harness against local ingest service
+        working-directory: conformance
+        env:
+          CONFORMANCE_ENDPOINT: http://localhost:8080
+          CONFORMANCE_API_KEY: rt_ci_conformance_key
+          CONFORMANCE_FORMAT: tap
+        run: npx tsx src/index.ts

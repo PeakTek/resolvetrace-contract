@@ -1,0 +1,28 @@
+{
+  "name": "@peaktek/resolvetrace-conformance",
+  "version": "0.1.0",
+  "description": "Black-box conformance harness that verifies a ResolveTrace deployment implements the published contract. Ships as a CLI.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "resolvetrace-conformance": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@peaktek/resolvetrace-sdk": "file:../sdk/typescript",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

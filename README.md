@@ -24,6 +24,7 @@ Planned contents:
 - `sdk/`
 - `api-spec/`
 - `schemas/`
+- `conformance/` — black-box harness that verifies a deployment against the contract. See [`conformance/README.md`](./conformance/README.md) for the customer-facing guide.
 - `CHANGELOG.md`
 
 This repository intentionally does not contain:
