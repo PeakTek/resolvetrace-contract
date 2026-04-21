@@ -41,7 +41,7 @@ jobs:
       # `MINIO_DEFAULT_BUCKETS`, and is reachable from the `ingest` service
       # via the shared docker network at `http://minio:9000`.
       minio:
-        image: bitnami/minio:2024
+        image: bitnami/minio:latest
         ports:
           - 9000:9000
         env:
