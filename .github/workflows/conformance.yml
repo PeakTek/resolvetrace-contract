@@ -33,10 +33,19 @@ jobs:
         # below on ingest:4317.
         image: ghcr.io/peaktek/resolvetrace-core:latest
         env:
-          # Match the OSS defaults so the harness API key is correctly
-          # scoped by the server's env-driven auth provider.
-          RESOLVETRACE_API_KEY: rt_ci_conformance_key
-          RESOLVETRACE_BIND: '0.0.0.0:4317'
+          # Auth: the harness sends Bearer rt_ci_conformance_key; the OSS
+          # server authorises that exact value via OSS_API_KEY.
+          OSS_API_KEY: rt_ci_conformance_key
+          # Required env for the single-tenant resolver + storage adapters to
+          # pass their startup config checks. The conformance harness exercises
+          # HTTP surface + ajv validation only, so the backing stores are
+          # never reached; stub values are sufficient.
+          DATABASE_URL: 'postgres://stub:stub@localhost:5432/stub'
+          REDIS_URL: 'redis://localhost:6379/0'
+          S3_BUCKET: 'conformance-stub'
+          AWS_REGION: 'us-east-1'
+          RESOLVETRACE_TENANT_ID: 'oss-single-tenant'
+          RESOLVETRACE_ENV: 'dev'
         ports:
           - 4317:4317
         options: >-
