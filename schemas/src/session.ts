@@ -9,7 +9,7 @@
  */
 
 import { Type, Static } from '@sinclair/typebox';
-import { ULID_PATTERN } from './events';
+import { ULID_PATTERN } from './events.js';
 
 /* -------------------------------------------------------------------------- */
 /* Module metadata                                                            */

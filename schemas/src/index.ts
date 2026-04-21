@@ -7,7 +7,7 @@
  * and the OpenAPI spec.
  */
 
-export * from './events';
-export * from './replay';
-export * from './session';
-export * from './api-responses';
+export * from './events.js';
+export * from './replay.js';
+export * from './session.js';
+export * from './api-responses.js';

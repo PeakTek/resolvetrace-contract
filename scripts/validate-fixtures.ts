@@ -44,9 +44,21 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import Ajv2020 from 'ajv/dist/2020.js';
+import Ajv2020Import from 'ajv/dist/2020.js';
 import type { AnySchemaObject, ErrorObject, ValidateFunction } from 'ajv';
-import addFormats from 'ajv-formats';
+import addFormatsImport from 'ajv-formats';
+
+// NodeNext-ESM + CJS-default-export interop: both `ajv/dist/2020` and
+// `ajv-formats` ship as CJS with `module.exports = X` plus a mirror
+// `module.exports.default = X`. Depending on resolver version, the imported
+// binding can be either the class/function itself or a wrapper with a
+// `.default` property — unwrap defensively so both shapes work.
+const Ajv2020 =
+  (Ajv2020Import as unknown as { default?: typeof Ajv2020Import }).default ??
+  Ajv2020Import;
+const addFormats =
+  (addFormatsImport as unknown as { default?: typeof addFormatsImport }).default ??
+  addFormatsImport;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

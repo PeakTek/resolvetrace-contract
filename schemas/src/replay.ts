@@ -13,7 +13,7 @@
  */
 
 import { Type, Static } from '@sinclair/typebox';
-import { ScrubberReport, ULID_PATTERN } from './events';
+import { ScrubberReport, ULID_PATTERN } from './events.js';
 
 /* -------------------------------------------------------------------------- */
 /* Module metadata                                                            */

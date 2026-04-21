@@ -5,6 +5,12 @@
  * @seriousme/openapi-schema-validator (supports OpenAPI 3.0.x and 3.1.x,
  * auto-detecting from the document).
  *
+ * The spec uses external `$ref`s into `schemas/*.json` (e.g.
+ * `../schemas/events.json#/definitions/EventBatchRequest`). The underlying
+ * validator only resolves internal refs, so we pre-dereference the spec
+ * with `@apidevtools/json-schema-ref-parser` and hand the inlined object
+ * to the validator.
+ *
  * Exits non-zero on any validation error. Missing spec is also an error —
  * the file is expected to exist once A7 lands the OpenAPI surface.
  */
@@ -13,7 +19,13 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import $RefParserImport from '@apidevtools/json-schema-ref-parser';
 import { Validator } from '@seriousme/openapi-schema-validator';
+
+// NodeNext-ESM + CJS-default-export interop: unwrap a possibly-wrapped default.
+const $RefParser =
+  ($RefParserImport as unknown as { default?: typeof $RefParserImport })
+    .default ?? $RefParserImport;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -29,8 +41,24 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Dereference external `$ref`s (relative paths are resolved against the
+  // spec's own directory) before handing the spec to the structural validator.
+  let dereferenced: unknown;
+  try {
+    dereferenced = await $RefParser.dereference(OPENAPI_PATH);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[validate-openapi] failed to dereference external $refs in ` +
+        `api-spec/openapi.yaml: ${msg}`,
+    );
+    process.exit(1);
+  }
+
   const validator = new Validator();
-  const result = await validator.validate(OPENAPI_PATH);
+  const result = await validator.validate(
+    dereferenced as Parameters<Validator['validate']>[0],
+  );
 
   if (result.valid) {
     const spec = validator.specification as { openapi?: string } | undefined;
