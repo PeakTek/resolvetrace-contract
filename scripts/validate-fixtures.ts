@@ -48,17 +48,11 @@ import Ajv2020Import from 'ajv/dist/2020.js';
 import type { AnySchemaObject, ErrorObject, ValidateFunction } from 'ajv';
 import addFormatsImport from 'ajv-formats';
 
-// NodeNext-ESM + CJS-default-export interop: both `ajv/dist/2020` and
-// `ajv-formats` ship as CJS with `module.exports = X` plus a mirror
-// `module.exports.default = X`. Depending on resolver version, the imported
-// binding can be either the class/function itself or a wrapper with a
-// `.default` property — unwrap defensively so both shapes work.
-const Ajv2020 =
-  (Ajv2020Import as unknown as { default?: typeof Ajv2020Import }).default ??
-  Ajv2020Import;
+// Under NodeNext, CJS default exports surface as the module namespace whose
+// `.default` is the actual class/function. Cast through the namespace type.
+const Ajv2020 = Ajv2020Import as unknown as typeof Ajv2020Import.default;
 const addFormats =
-  (addFormatsImport as unknown as { default?: typeof addFormatsImport }).default ??
-  addFormatsImport;
+  addFormatsImport as unknown as typeof addFormatsImport.default;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
