@@ -4,6 +4,14 @@
 # ingest server image (`ghcr.io/peaktek/resolvetrace-core:latest`, produced
 # by the `resolvetrace-core` repository). The job is a first-class gate:
 # any conformance regression blocks the PR.
+#
+# The job provisions two service containers:
+#   - `ingest`: the OSS server image itself (from GHCR).
+#   - `minio`: an S3-compatible backend the ingest server reads at
+#     request time. A setup step pre-seeds the canonical replay chunk that
+#     the `ReplayManifestRequest/valid-normal` conformance fixture refers
+#     to, so the server's `/v1/replay/complete` handler can satisfy its
+#     size-match check against the manifest.
 name: conformance
 
 on:
@@ -27,6 +35,24 @@ jobs:
     timeout-minutes: 20
 
     services:
+      # S3-compatible object store. `bitnami/minio` bakes `minio server
+      # /data` into the entrypoint (GitHub Actions services don't support
+      # a command field), auto-creates buckets listed in
+      # `MINIO_DEFAULT_BUCKETS`, and is reachable from the `ingest` service
+      # via the shared docker network at `http://minio:9000`.
+      minio:
+        image: bitnami/minio:2024
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ROOT_USER: conformance
+          MINIO_ROOT_PASSWORD: conformance
+          MINIO_DEFAULT_BUCKETS: conformance-stub
+        # No --health-cmd here: whether the bitnami image ships with curl
+        # varies across 2024.x tags. The "Wait for MinIO readiness" step
+        # below does the readiness gate explicitly against /minio/health/live
+        # using the runner's own curl, which is reliable.
+
       ingest:
         # Image is published from the resolvetrace-core repo. This service
         # block pulls the pinned tag and exposes it to the harness step
@@ -37,17 +63,17 @@ jobs:
           # server authorises that exact value via OSS_API_KEY.
           OSS_API_KEY: rt_ci_conformance_key
           # Required env for the single-tenant resolver + storage adapters to
-          # pass their startup config checks. The conformance harness exercises
-          # HTTP surface + ajv validation only, so the backing stores are
-          # never reached; stub values are sufficient.
+          # pass their startup config checks. Values that need to reach a
+          # real backend (S3) point at the `minio` service below; the rest
+          # remain stubs since the harness doesn't exercise DB or Redis.
           DATABASE_URL: 'postgres://stub:stub@localhost:5432/stub'
           REDIS_URL: 'redis://localhost:6379/0'
           S3_BUCKET: 'conformance-stub'
+          S3_ENDPOINT: 'http://minio:9000'
           AWS_REGION: 'us-east-1'
-          # Stub credentials so @aws-sdk/s3-request-presigner doesn't throw
-          # CredentialsProviderError when minting signed URLs. The signer
-          # computes the URL locally (HMAC over the canonical request); no
-          # actual AWS call is made, so any non-empty key pair works.
+          # Must match MINIO_ROOT_USER / MINIO_ROOT_PASSWORD above so the
+          # AWS SDK can authenticate against MinIO for HeadObject calls
+          # (/v1/replay/complete exercises this path).
           AWS_ACCESS_KEY_ID: 'conformance'
           AWS_SECRET_ACCESS_KEY: 'conformance'
           RESOLVETRACE_TENANT_ID: 'oss-single-tenant'
@@ -65,6 +91,41 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Wait for MinIO readiness
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live; then
+              echo "MinIO is live."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::MinIO did not become ready within 60s."
+          exit 1
+
+      - name: Seed canonical replay chunk into MinIO
+        env:
+          # The AWS CLI on the runner talks to MinIO with the same keys as
+          # the ingest server; only the endpoint differs (runner reaches
+          # MinIO via the mapped localhost port, ingest reaches it over the
+          # service network).
+          AWS_ACCESS_KEY_ID: conformance
+          AWS_SECRET_ACCESS_KEY: conformance
+          AWS_REGION: us-east-1
+        run: |
+          # The `ReplayManifestRequest/valid-normal` fixture declares
+          # `bytes: 523104` for the canonical chunk at
+          # `oss-single-tenant/01HWZX9CVJT5S0Y1Z2N3M4K5MP/0.rrweb`. The
+          # server's `/v1/replay/complete` handler rejects with HTTP 409
+          # unless headObject(key).size === body.bytes; it does not verify
+          # sha256 when the backend omits ChecksumSHA256 (MinIO's default
+          # PUT path), so zero-filled content is sufficient.
+          head -c 523104 /dev/zero > /tmp/chunk
+          test "$(wc -c < /tmp/chunk)" = "523104"
+          aws s3 cp /tmp/chunk \
+            's3://conformance-stub/oss-single-tenant/01HWZX9CVJT5S0Y1Z2N3M4K5MP/0.rrweb' \
+            --endpoint-url http://localhost:9000
 
       - name: Setup Node 20
         uses: actions/setup-node@v4
