@@ -48,11 +48,13 @@ jobs:
           RESOLVETRACE_ENV: 'dev'
         ports:
           - 4317:4317
-        options: >-
-          --health-cmd "wget -q --spider http://localhost:4317/health || exit 1"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 30
+        # No --health-cmd override here: the Dockerfile already defines a
+        # Node-based HEALTHCHECK that pokes http://127.0.0.1:$PORT/health.
+        # The base image (node:20-bookworm-slim) ships without wget/curl, so
+        # a wget-based --health-cmd would stall the container as "unhealthy"
+        # even when the server is serving traffic. Docker uses the image's
+        # baked-in HEALTHCHECK when no override is set; GitHub waits for
+        # "healthy" before running the harness step.
 
     steps:
       - name: Checkout
