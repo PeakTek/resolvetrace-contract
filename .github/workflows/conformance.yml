@@ -44,6 +44,12 @@ jobs:
           REDIS_URL: 'redis://localhost:6379/0'
           S3_BUCKET: 'conformance-stub'
           AWS_REGION: 'us-east-1'
+          # Stub credentials so @aws-sdk/s3-request-presigner doesn't throw
+          # CredentialsProviderError when minting signed URLs. The signer
+          # computes the URL locally (HMAC over the canonical request); no
+          # actual AWS call is made, so any non-empty key pair works.
+          AWS_ACCESS_KEY_ID: 'conformance'
+          AWS_SECRET_ACCESS_KEY: 'conformance'
           RESOLVETRACE_TENANT_ID: 'oss-single-tenant'
           RESOLVETRACE_ENV: 'dev'
         ports:
