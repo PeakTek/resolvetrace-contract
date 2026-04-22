@@ -115,6 +115,17 @@ jobs:
           docker logs minio || true
           exit 1
 
+      - name: Map minio hostname to localhost for runner-side fetches
+        run: |
+          # Presigned URLs the ingest server mints point at `http://minio:9000`
+          # (the hostname it sees over the services docker network). AWS SigV4
+          # pins the Host header into the signature, so the harness's PUT
+          # must use the same hostname. Point `minio` at localhost on the
+          # runner so fetch() resolves it and reaches MinIO over the mapped
+          # host port — the Host header stays as "minio:9000" and the
+          # signature validates.
+          echo "127.0.0.1 minio" | sudo tee -a /etc/hosts
+
       - name: Seed canonical replay chunk into MinIO
         env:
           # The AWS CLI on the runner talks to MinIO with the same keys as
