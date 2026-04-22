@@ -18,6 +18,11 @@
 #     (bitnami/minio — the usual workaround that bakes `server /data` into
 #     the entrypoint — was moved to a restricted Broadcom registry in
 #     Aug 2025; see velero-io/velero#9279.)
+#
+# The weekly `schedule:` trigger re-runs the full harness against whatever
+# image tags are pinned today, so an upstream tag removal (as happened with
+# `bitnami/minio` in Aug 2025 and `tufin/oasdiff:v1.11.6` earlier) surfaces
+# within 7 days rather than waiting for the next push to contract.
 name: conformance
 
 on:
@@ -25,6 +30,8 @@ on:
     branches: [main]
   push:
     branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'
   workflow_dispatch:
 
 permissions:
