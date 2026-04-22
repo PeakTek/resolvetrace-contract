@@ -186,3 +186,12 @@ jobs:
           CONFORMANCE_API_KEY: rt_ci_conformance_key
           CONFORMANCE_FORMAT: tap
         run: npx tsx src/index.ts
+
+      - name: Stop manually-run MinIO container
+        if: always()
+        # The `minio` container was started by `docker run` in a step, not as
+        # a GHA `services:` entry, so GitHub's auto-cleanup doesn't know to
+        # remove it — which leaves the services network with an active
+        # endpoint and surfaces a "network rm failed" warning at job end.
+        # Remove it explicitly so teardown is clean.
+        run: docker rm -f minio 2>/dev/null || true
