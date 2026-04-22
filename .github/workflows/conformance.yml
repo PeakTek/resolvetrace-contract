@@ -102,7 +102,7 @@ jobs:
             -p 9000:9000 \
             -e MINIO_ROOT_USER=conformance \
             -e MINIO_ROOT_PASSWORD=conformance \
-            minio/minio:RELEASE.2025-10-15T17-29-55Z \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z \
             server /data
 
       - name: Wait for MinIO readiness
