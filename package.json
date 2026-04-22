@@ -16,7 +16,7 @@
     "check:all": "npm run typecheck && npm run build:schemas && npm run validate:fixtures && npm run validate:openapi"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.33.0",
+    "@sinclair/typebox": "^0.34.49",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1"
   },
