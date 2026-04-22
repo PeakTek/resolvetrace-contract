@@ -5,13 +5,19 @@
 # by the `resolvetrace-core` repository). The job is a first-class gate:
 # any conformance regression blocks the PR.
 #
-# The job provisions two service containers:
-#   - `ingest`: the OSS server image itself (from GHCR).
-#   - `minio`: an S3-compatible backend the ingest server reads at
-#     request time. A setup step pre-seeds the canonical replay chunk that
-#     the `ReplayManifestRequest/valid-normal` conformance fixture refers
-#     to, so the server's `/v1/replay/complete` handler can satisfy its
-#     size-match check against the manifest.
+# Container layout:
+#   - `ingest` runs as a GitHub Actions service so the runner waits for
+#     its baked-in HEALTHCHECK before executing the harness step.
+#   - MinIO runs via `docker run -d` in a setup step (not as a GHA
+#     service) because the official `minio/minio` image needs the
+#     `server /data` command at launch — GitHub Actions `services:` has
+#     no `command` field. We attach the manual container to the same
+#     auto-generated docker network GitHub creates for the job's services,
+#     under the network alias `minio`, so the ingest container can reach
+#     it at `http://minio:9000` exactly as if it were a sibling service.
+#     (bitnami/minio — the usual workaround that bakes `server /data` into
+#     the entrypoint — was moved to a restricted Broadcom registry in
+#     Aug 2025; see velero-io/velero#9279.)
 name: conformance
 
 on:
@@ -35,24 +41,6 @@ jobs:
     timeout-minutes: 20
 
     services:
-      # S3-compatible object store. `bitnami/minio` bakes `minio server
-      # /data` into the entrypoint (GitHub Actions services don't support
-      # a command field), auto-creates buckets listed in
-      # `MINIO_DEFAULT_BUCKETS`, and is reachable from the `ingest` service
-      # via the shared docker network at `http://minio:9000`.
-      minio:
-        image: bitnami/minio:latest
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ROOT_USER: conformance
-          MINIO_ROOT_PASSWORD: conformance
-          MINIO_DEFAULT_BUCKETS: conformance-stub
-        # No --health-cmd here: whether the bitnami image ships with curl
-        # varies across 2024.x tags. The "Wait for MinIO readiness" step
-        # below does the readiness gate explicitly against /minio/health/live
-        # using the runner's own curl, which is reliable.
-
       ingest:
         # Image is published from the resolvetrace-core repo. This service
         # block pulls the pinned tag and exposes it to the harness step
@@ -64,16 +52,16 @@ jobs:
           OSS_API_KEY: rt_ci_conformance_key
           # Required env for the single-tenant resolver + storage adapters to
           # pass their startup config checks. Values that need to reach a
-          # real backend (S3) point at the `minio` service below; the rest
-          # remain stubs since the harness doesn't exercise DB or Redis.
+          # real backend (S3) point at the `minio` container the setup step
+          # starts; the rest remain stubs since the harness doesn't exercise
+          # DB or Redis.
           DATABASE_URL: 'postgres://stub:stub@localhost:5432/stub'
           REDIS_URL: 'redis://localhost:6379/0'
           S3_BUCKET: 'conformance-stub'
           S3_ENDPOINT: 'http://minio:9000'
           AWS_REGION: 'us-east-1'
-          # Must match MINIO_ROOT_USER / MINIO_ROOT_PASSWORD above so the
-          # AWS SDK can authenticate against MinIO for HeadObject calls
-          # (/v1/replay/complete exercises this path).
+          # Must match the MINIO_ROOT_USER / MINIO_ROOT_PASSWORD the setup
+          # step passes to MinIO, so the AWS SDK's HeadObject succeeds.
           AWS_ACCESS_KEY_ID: 'conformance'
           AWS_SECRET_ACCESS_KEY: 'conformance'
           RESOLVETRACE_TENANT_ID: 'oss-single-tenant'
@@ -92,6 +80,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Start MinIO on the services network
+        run: |
+          # Discover the docker network GitHub created for this job's
+          # services. The name is `github_network_<random>`; we find the
+          # single match and join the manual MinIO container to it so the
+          # ingest service can reach it by name.
+          NETWORK=$(docker network ls --filter name=github_network --format '{{.Name}}' | head -n1)
+          if [ -z "$NETWORK" ]; then
+            echo "::error::no github_network_* network found"
+            exit 1
+          fi
+          echo "joining network: $NETWORK"
+          docker run -d \
+            --name minio \
+            --network "$NETWORK" \
+            --network-alias minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=conformance \
+            -e MINIO_ROOT_PASSWORD=conformance \
+            minio/minio:latest \
+            server /data
+
       - name: Wait for MinIO readiness
         run: |
           for i in $(seq 1 30); do
@@ -102,6 +112,7 @@ jobs:
             sleep 2
           done
           echo "::error::MinIO did not become ready within 60s."
+          docker logs minio || true
           exit 1
 
       - name: Seed canonical replay chunk into MinIO
@@ -109,11 +120,12 @@ jobs:
           # The AWS CLI on the runner talks to MinIO with the same keys as
           # the ingest server; only the endpoint differs (runner reaches
           # MinIO via the mapped localhost port, ingest reaches it over the
-          # service network).
+          # service network at http://minio:9000).
           AWS_ACCESS_KEY_ID: conformance
           AWS_SECRET_ACCESS_KEY: conformance
           AWS_REGION: us-east-1
         run: |
+          aws s3 mb s3://conformance-stub --endpoint-url http://localhost:9000
           # The `ReplayManifestRequest/valid-normal` fixture declares
           # `bytes: 523104` for the canonical chunk at
           # `oss-single-tenant/01HWZX9CVJT5S0Y1Z2N3M4K5MP/0.rrweb`. The
