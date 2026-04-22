@@ -78,7 +78,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Start MinIO on the services network
         run: |
@@ -92,6 +92,9 @@ jobs:
             exit 1
           fi
           echo "joining network: $NETWORK"
+          # MinIO image pinned to a specific release tag for supply-chain
+          # hygiene — floating `:latest` would let an upstream push silently
+          # change CI behaviour. Bump by updating the tag deliberately.
           docker run -d \
             --name minio \
             --network "$NETWORK" \
@@ -99,7 +102,7 @@ jobs:
             -p 9000:9000 \
             -e MINIO_ROOT_USER=conformance \
             -e MINIO_ROOT_PASSWORD=conformance \
-            minio/minio:latest \
+            minio/minio:RELEASE.2025-10-15T17-29-55Z \
             server /data
 
       - name: Wait for MinIO readiness
@@ -151,12 +154,12 @@ jobs:
             --endpoint-url http://localhost:9000
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
