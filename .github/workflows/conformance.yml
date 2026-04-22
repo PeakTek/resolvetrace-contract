@@ -154,7 +154,7 @@ jobs:
             --endpoint-url http://localhost:9000
 
       - name: Setup Node 20
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
 
