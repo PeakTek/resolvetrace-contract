@@ -21,9 +21,13 @@ export {
   ResolveTraceError,
   TransportError,
   BudgetExceededError,
+  SessionUnknownError,
+  SessionRecoveryFailedError,
+  SessionRequiredError,
 } from './errors.js';
 export type { ResolveTraceErrorCode } from './errors.js';
 export type {
+  ActorIdentity,
   AttributeValue,
   ClientOptions,
   Diagnostics,
@@ -38,6 +42,11 @@ export type {
   MaskSelector,
   ScrubberReport,
   SdkIdentity,
+  SessionEndOptions,
+  SessionEndPayload,
+  SessionEndReason,
+  SessionStartPayload,
+  SessionUnknownErrorBody,
   ShutdownOptions,
   Ulid,
 } from './types.js';

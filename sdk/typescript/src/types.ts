@@ -48,9 +48,22 @@ export interface SdkIdentity {
   runtime?: string;
 }
 
+/** Caller-supplied identity decorator, populated by `client.identify(...)`. */
+export interface ActorIdentity {
+  /** Caller-provided opaque user identifier. */
+  user_id: string;
+  /** Optional free-form trait bag. */
+  traits?: Record<string, unknown>;
+}
+
 /** Full on-wire envelope for a single event. */
 export interface EventEnvelope {
   eventId: Ulid;
+  /**
+   * Session correlation ULID. Always present on envelopes built by the
+   * client; remains optional on the wire schema for backward compatibility
+   * with legacy callers that build envelopes by hand.
+   */
   sessionId?: Ulid;
   type: string;
   capturedAt: IsoDateTime;
@@ -58,6 +71,8 @@ export interface EventEnvelope {
   scrubber: ScrubberReport;
   clockSkewDetected?: boolean;
   sdk: SdkIdentity;
+  /** Identity decoration carried from `client.identify(...)`. */
+  actor?: ActorIdentity;
 }
 
 /** Batch request body POSTed to `/v1/events`. */
@@ -102,6 +117,40 @@ export interface Diagnostics {
 /** CSS selectors applied by the SDK scrubber to mask matching elements. */
 export type MaskSelector = string;
 
+/** Reason the SDK ended a session. Mirrors the wire payload field. */
+export type SessionEndReason =
+  | 'inactivity'
+  | 'max_duration'
+  | 'explicit'
+  | 'shutdown';
+
+/** Body sent by the SDK on `POST /v1/session/start`. */
+export interface SessionStartPayload {
+  session_id: Ulid;
+  started_at: IsoDateTime;
+  user_agent?: string;
+  attributes?: Record<string, unknown>;
+  identify?: {
+    user_id: string;
+    traits?: Record<string, unknown>;
+  };
+}
+
+/** Body sent by the SDK on `POST /v1/session/end`. */
+export interface SessionEndPayload {
+  session_id: Ulid;
+  ended_at: IsoDateTime;
+  ended_reason: SessionEndReason;
+}
+
+/** Body returned by the server when an events batch references an unknown session. */
+export interface SessionUnknownErrorBody {
+  error: 'session_unknown';
+  session_id?: Ulid;
+  unresolved_session_ids?: Ulid[];
+  message?: string;
+}
+
 /** Options accepted by the `ResolveTraceClient` constructor. */
 export interface ClientOptions {
   /** Opaque bearer token issued by the ResolveTrace control plane. */
@@ -120,6 +169,27 @@ export interface ClientOptions {
   transport?: typeof fetch;
   /** CSS selectors whose matched elements the scrubber should mask. */
   maskSelectors?: MaskSelector[];
+  /**
+   * Idle timeout (ms) before the current session is rolled. Defaults to
+   * 30 minutes. May only be lowered relative to the default.
+   */
+  sessionInactivityMs?: number;
+  /**
+   * Hard upper bound (ms) on session duration before the session is rolled.
+   * Defaults to 12 hours. May only be lowered relative to the default.
+   */
+  sessionMaxDurationMs?: number;
+  /**
+   * When `false`, the SDK will not lazy-start a session on the first capture.
+   * The caller is then responsible for invoking `client.session.restart()`
+   * before any `capture()`. Defaults to `true`.
+   */
+  autoSession?: boolean;
+  /**
+   * Optional getter invoked on every session-start to populate
+   * `attributes` on the start payload. Called fresh per session.
+   */
+  sessionAttributes?: () => Record<string, unknown>;
 }
 
 /** Options accepted by `client.flush()`. */
@@ -140,5 +210,10 @@ export interface FlushResult {
 
 /** Options accepted by `client.shutdown()`. */
 export interface ShutdownOptions {
+  timeoutMs?: number;
+}
+
+/** Options accepted by `client.session.end()`. */
+export interface SessionEndOptions {
   timeoutMs?: number;
 }

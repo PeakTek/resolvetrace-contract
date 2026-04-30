@@ -6,12 +6,16 @@
  * chains across bundler boundaries.
  */
 
+import type { Ulid } from './types.js';
+
 export type ResolveTraceErrorCode =
   | 'config.invalid'
   | 'config.unknown_option'
   | 'config.api_key_invalid'
   | 'config.endpoint_invalid'
   | 'config.api_key_too_large'
+  | 'config.session_inactivity_invalid'
+  | 'config.session_max_duration_invalid'
   | 'transport.network'
   | 'transport.http'
   | 'transport.timeout'
@@ -19,7 +23,11 @@ export type ResolveTraceErrorCode =
   | 'transport.payload_too_large'
   | 'scrub.budget_exceeded'
   | 'queue.backpressure'
-  | 'client.shutdown';
+  | 'client.shutdown'
+  | 'session.unknown'
+  | 'session.recovery_failed'
+  | 'session.required'
+  | 'session.storage_unavailable';
 
 /** Base class for all SDK errors. */
 export class ResolveTraceError extends Error {
@@ -61,5 +69,59 @@ export class BudgetExceededError extends ResolveTraceError {
     super('scrub.budget_exceeded', message);
     this.name = 'BudgetExceededError';
     Object.setPrototypeOf(this, BudgetExceededError.prototype);
+  }
+}
+
+/**
+ * Surfaced to the client when the server responds 409 with
+ * `{ "error": "session_unknown" }` for an events batch. Carries the affected
+ * session ID(s) so the recovery path can re-issue session start and retry.
+ */
+export class SessionUnknownError extends ResolveTraceError {
+  /** Session IDs the server could not resolve for the requesting tenant. */
+  public readonly unresolvedSessionIds: Ulid[];
+
+  constructor(unresolvedSessionIds: Ulid[], message?: string) {
+    super(
+      'session.unknown',
+      message ??
+        'Server reported the session ID is not known. Re-issue session start and retry.',
+    );
+    this.name = 'SessionUnknownError';
+    this.unresolvedSessionIds = unresolvedSessionIds;
+    Object.setPrototypeOf(this, SessionUnknownError.prototype);
+  }
+}
+
+/**
+ * Surfaced via `onError` when the SDK's one-shot session-unknown recovery
+ * fails (server still reports `session_unknown` after the re-issued start).
+ * The events batch is dropped; the session ID is NOT rolled.
+ */
+export class SessionRecoveryFailedError extends ResolveTraceError {
+  public readonly unresolvedSessionIds: Ulid[];
+
+  constructor(unresolvedSessionIds: Ulid[], message?: string) {
+    super(
+      'session.recovery_failed',
+      message ??
+        'Session recovery failed: server still reports session_unknown after re-issued start.',
+    );
+    this.name = 'SessionRecoveryFailedError';
+    this.unresolvedSessionIds = unresolvedSessionIds;
+    Object.setPrototypeOf(this, SessionRecoveryFailedError.prototype);
+  }
+}
+
+/** Thrown when `capture()` runs without an active session in `autoSession: false` mode. */
+export class SessionRequiredError extends ResolveTraceError {
+  constructor(message?: string) {
+    super(
+      'session.required',
+      message ??
+        'No active session. Call client.session.restart() before capture, or enable autoSession.',
+    );
+    this.name = 'SessionRequiredError';
+    Object.setPrototypeOf(this, SessionRequiredError.prototype);
   }
 }

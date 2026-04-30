@@ -8,7 +8,7 @@
 import { SDK_NAME, SDK_VERSION } from './constants.js';
 import { detectRuntime } from './runtime.js';
 import { scrubAttributes } from './scrubber.js';
-import type { EventEnvelope, EventInput } from './types.js';
+import type { ActorIdentity, EventEnvelope, EventInput } from './types.js';
 import { generateUlid, isUlid } from './ulid.js';
 
 const EVENT_TYPE_RE = /^[a-zA-Z0-9_.\-:/]+$/;
@@ -27,6 +27,7 @@ export function buildEnvelope(
   opts: {
     scrubBudgetMs?: number;
     now?: () => Date;
+    actor?: ActorIdentity;
   } = {},
 ): EventEnvelope {
   if (!input || typeof input !== 'object') {
@@ -77,6 +78,7 @@ export function buildEnvelope(
   };
   if (input.sessionId) envelope.sessionId = input.sessionId;
   if (scrubbed.attributes !== undefined) envelope.attributes = scrubbed.attributes;
+  if (opts.actor !== undefined) envelope.actor = opts.actor;
   return envelope;
 }
 

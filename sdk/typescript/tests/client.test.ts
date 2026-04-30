@@ -1,6 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ResolveTraceClient, createClient } from '../src/client.js';
 
+/** Pull the request init for the call whose URL endpoint matches `path`. */
+function findCall(
+  fetchImpl: ReturnType<typeof vi.fn>,
+  path: string,
+): RequestInit | undefined {
+  const call = fetchImpl.mock.calls.find(([url]) => String(url).endsWith(path));
+  return call ? (call[1] as RequestInit) : undefined;
+}
+
 describe('ResolveTraceClient', () => {
   it('constructs via factory and class', () => {
     const opts = {
@@ -38,7 +47,9 @@ describe('ResolveTraceClient', () => {
     client.track('button_click', { button: 'signup' });
     await client.flush();
     expect(fetchImpl).toHaveBeenCalled();
-    const body = JSON.parse(fetchImpl.mock.calls[0]![1]!.body as string);
+    const eventsCall = findCall(fetchImpl, '/v1/events');
+    expect(eventsCall).toBeDefined();
+    const body = JSON.parse(eventsCall!.body as string);
     expect(body.events[0].type).toBe('button_click');
   });
 
@@ -53,8 +64,9 @@ describe('ResolveTraceClient', () => {
     client.track('drop_me');
     client.track('keep_me');
     await client.flush();
-    expect(fetchImpl).toHaveBeenCalledOnce();
-    const body = JSON.parse(fetchImpl.mock.calls[0]![1]!.body as string);
+    const eventsCall = findCall(fetchImpl, '/v1/events');
+    expect(eventsCall).toBeDefined();
+    const body = JSON.parse(eventsCall!.body as string);
     expect(body.events).toHaveLength(1);
     expect(body.events[0].type).toBe('keep_me');
   });

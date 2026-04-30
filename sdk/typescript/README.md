@@ -42,6 +42,10 @@ The constructor accepts **exactly** these options. Passing anything else
 | `debug` | `boolean` | `false` | Log SDK internals to the console (API key is redacted). |
 | `maskSelectors` | `string[]` | `[]` | CSS selectors whose matched elements the scrubber should mask. |
 | `transport` | `typeof fetch` | `globalThis.fetch` | Injectable fetch, for tests. |
+| `sessionInactivityMs` | `number` | `1_800_000` | Idle ms before the SDK rolls the session. May only be lowered. |
+| `sessionMaxDurationMs` | `number` | `43_200_000` | Hard ms cap on session duration. May only be lowered. |
+| `autoSession` | `boolean` | `true` | When `false`, the SDK does not auto-start sessions; the caller must call `client.session.restart()` first. |
+| `sessionAttributes` | `() => Record<string, unknown>` | — | Called per session-start to populate the start payload's `attributes`. |
 
 ## API
 
@@ -81,12 +85,74 @@ process shutdown (server). Subsequent `capture` calls are dropped.
 Returns a snapshot of internal counters — useful for surfacing SDK health in
 your own observability dashboard.
 
+## Sessions
+
+The SDK automatically groups events under a session. By default a session
+starts on the first `capture()`, persists in `sessionStorage` (browser) for
+the duration of the tab, rolls after 30 minutes of inactivity, and is hard-
+capped at 12 hours. Every event carries the active `sessionId`.
+
+### `client.session.id`
+
+The current session ULID, or `null` when no session is active.
+
+### `client.session.restart()`
+
+Synchronously generates a new session ID, fires a `/v1/session/end` for the
+old session and a `/v1/session/start` for the new one (in flight, no
+awaiting), and returns the new ID. Useful when your app concept of a
+"session" diverges from the SDK's idle window — for example, after a
+sign-in that should isolate replay from the previous user.
+
+### `client.session.end({ timeoutMs? })`
+
+Awaits a `/v1/session/end` for the current session and clears it. Subsequent
+captures lazy-start a fresh session in `autoSession: true` mode.
+
+### `client.identify(userId, traits?)`
+
+Decorates the current and future events with an `actor` block carrying the
+caller-provided user identifier. Pass `null` for `userId` to clear. Identity
+does **not** trigger a session rollover and does **not** by itself produce a
+network call: it surfaces server-side via the next event or session-start.
+
+### Manual sessions
+
+Set `autoSession: false` to take full control of when sessions start:
+
+```ts
+const rt = createClient({
+  apiKey: process.env.RT_KEY!,
+  endpoint: 'https://ingest.resolvetrace.com',
+  autoSession: false,
+});
+
+rt.session.restart(); // doubles as "start a session now"
+rt.track('page_view');
+```
+
+In manual mode, `capture()` calls made before `session.restart()` are
+dropped and surface a `SessionRequiredError` via `onError`.
+
+### Recovery from `session_unknown`
+
+If an events batch races ahead of its session-start and reaches a server
+replica that hasn't observed the start request yet, the server responds
+`409 Conflict` with `{ "error": "session_unknown" }`. The SDK transparently
+re-issues `/v1/session/start` for the same session ID and retries the batch
+once. If the second attempt also fails, the batch is dropped and a
+`SessionRecoveryFailedError` surfaces via `onError`. The session ID is
+preserved.
+
 ## FAQ
 
 **Does the SDK persist events to disk in the browser?**
 No. Events held in the in-memory queue are dropped if the tab closes before a
 flush completes; this is intentional so the SDK never writes user data to
-`localStorage`, cookies, or IndexedDB.
+`localStorage`, cookies, or IndexedDB. The SDK does write a small
+`{session_id, started_at, last_activity_at}` record to `sessionStorage` so
+that the same session is preserved across same-tab page navigations; that
+record contains no event data and no PII.
 
 **What happens when the network is down?**
 The SDK retries with exponential backoff (full jitter, up to 30 s per attempt,

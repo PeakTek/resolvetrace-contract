@@ -6,7 +6,13 @@
  * at construction time.
  */
 
-import { ALLOWED_OPTION_KEYS, MAX_API_KEY_BYTES } from './constants.js';
+import {
+  ALLOWED_OPTION_KEYS,
+  DEFAULT_SESSION_INACTIVITY_MS,
+  DEFAULT_SESSION_MAX_DURATION_MS,
+  MAX_API_KEY_BYTES,
+  MIN_SESSION_TIMEOUT_MS,
+} from './constants.js';
 import { ConfigError } from './errors.js';
 import type { ClientOptions } from './types.js';
 
@@ -21,6 +27,10 @@ export interface ResolvedConfig {
   debug: boolean;
   transport: typeof fetch | undefined;
   maskSelectors: string[];
+  sessionInactivityMs: number;
+  sessionMaxDurationMs: number;
+  autoSession: boolean;
+  sessionAttributes: (() => Record<string, unknown>) | undefined;
 }
 
 /** Hosts that are allowed to use `http://` (dev / loopback). */
@@ -175,6 +185,61 @@ export function resolveConfig(input: unknown): ResolvedConfig {
     });
   }
 
+  // sessionInactivityMs -------------------------------------------------
+  const sessionInactivityMsRaw = opts.sessionInactivityMs;
+  let sessionInactivityMs = DEFAULT_SESSION_INACTIVITY_MS;
+  if (sessionInactivityMsRaw !== undefined) {
+    if (
+      typeof sessionInactivityMsRaw !== 'number' ||
+      !Number.isFinite(sessionInactivityMsRaw) ||
+      sessionInactivityMsRaw < MIN_SESSION_TIMEOUT_MS ||
+      sessionInactivityMsRaw > DEFAULT_SESSION_INACTIVITY_MS
+    ) {
+      throw new ConfigError(
+        'config.session_inactivity_invalid',
+        `\`sessionInactivityMs\` must be a finite number between ${MIN_SESSION_TIMEOUT_MS} and ${DEFAULT_SESSION_INACTIVITY_MS}.`,
+      );
+    }
+    sessionInactivityMs = sessionInactivityMsRaw;
+  }
+
+  // sessionMaxDurationMs ------------------------------------------------
+  const sessionMaxDurationMsRaw = opts.sessionMaxDurationMs;
+  let sessionMaxDurationMs = DEFAULT_SESSION_MAX_DURATION_MS;
+  if (sessionMaxDurationMsRaw !== undefined) {
+    if (
+      typeof sessionMaxDurationMsRaw !== 'number' ||
+      !Number.isFinite(sessionMaxDurationMsRaw) ||
+      sessionMaxDurationMsRaw < MIN_SESSION_TIMEOUT_MS ||
+      sessionMaxDurationMsRaw > DEFAULT_SESSION_MAX_DURATION_MS
+    ) {
+      throw new ConfigError(
+        'config.session_max_duration_invalid',
+        `\`sessionMaxDurationMs\` must be a finite number between ${MIN_SESSION_TIMEOUT_MS} and ${DEFAULT_SESSION_MAX_DURATION_MS}.`,
+      );
+    }
+    sessionMaxDurationMs = sessionMaxDurationMsRaw;
+  }
+
+  // autoSession ---------------------------------------------------------
+  const autoSessionRaw = opts.autoSession;
+  if (autoSessionRaw !== undefined && typeof autoSessionRaw !== 'boolean') {
+    throw new ConfigError('config.invalid', '`autoSession` must be a boolean if provided.');
+  }
+  const autoSession = autoSessionRaw === undefined ? true : autoSessionRaw;
+
+  // sessionAttributes ---------------------------------------------------
+  const sessionAttributesRaw = opts.sessionAttributes;
+  if (
+    sessionAttributesRaw !== undefined &&
+    typeof sessionAttributesRaw !== 'function'
+  ) {
+    throw new ConfigError(
+      'config.invalid',
+      '`sessionAttributes` must be a function if provided.',
+    );
+  }
+
   return {
     apiKey,
     endpoint,
@@ -185,6 +250,12 @@ export function resolveConfig(input: unknown): ResolvedConfig {
     debug,
     transport: transport as typeof fetch | undefined,
     maskSelectors,
+    sessionInactivityMs,
+    sessionMaxDurationMs,
+    autoSession,
+    sessionAttributes: sessionAttributesRaw as
+      | (() => Record<string, unknown>)
+      | undefined,
   };
 }
 

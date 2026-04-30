@@ -49,6 +49,24 @@ export const MAX_API_KEY_BYTES = 4 * 1024; // 4 KiB
 /** HTTP path for the batch ingest endpoint. */
 export const EVENTS_PATH = '/v1/events';
 
+/** HTTP path for opening a session. */
+export const SESSION_START_PATH = '/v1/session/start';
+
+/** HTTP path for closing a session. */
+export const SESSION_END_PATH = '/v1/session/end';
+
+/** Default session inactivity (idle) timeout. May only be lowered. */
+export const DEFAULT_SESSION_INACTIVITY_MS = 30 * 60 * 1000;
+
+/** Default session max duration. May only be lowered. */
+export const DEFAULT_SESSION_MAX_DURATION_MS = 12 * 60 * 60 * 1000;
+
+/** Lower bound (inclusive) on either session timeout. */
+export const MIN_SESSION_TIMEOUT_MS = 1_000;
+
+/** Maximum frequency (ms) of sessionStorage flushes for `lastActivityAt`. */
+export const SESSION_STORAGE_FLUSH_INTERVAL_MS = 5_000;
+
 /** Allowed option keys on the public constructor. */
 export const ALLOWED_OPTION_KEYS: ReadonlySet<string> = new Set([
   'apiKey',
@@ -59,4 +77,8 @@ export const ALLOWED_OPTION_KEYS: ReadonlySet<string> = new Set([
   'debug',
   'transport',
   'maskSelectors',
+  'sessionInactivityMs',
+  'sessionMaxDurationMs',
+  'autoSession',
+  'sessionAttributes',
 ]);

@@ -29,13 +29,27 @@ import {
   RETRY_MAX_ATTEMPTS,
   RETRY_MAX_WAIT_MS,
   RETRY_STATUS_CODES,
+  SESSION_END_PATH,
+  SESSION_START_PATH,
 } from './constants.js';
 import { redactAuth } from './config.js';
 import type { ResolvedConfig } from './config.js';
-import { TransportError } from './errors.js';
+import {
+  SessionRecoveryFailedError,
+  SessionUnknownError,
+  TransportError,
+} from './errors.js';
 import { approximateJsonBytes } from './envelope.js';
 import { isBrowser, nowMs } from './runtime.js';
-import type { Diagnostics, EventEnvelope, FlushResult } from './types.js';
+import type {
+  Diagnostics,
+  EventEnvelope,
+  FlushResult,
+  SessionEndPayload,
+  SessionStartPayload,
+  SessionUnknownErrorBody,
+  Ulid,
+} from './types.js';
 
 /** Size-tracked queue slot. */
 interface QueueSlot {
@@ -105,6 +119,53 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+/**
+ * Inspect a 409 response body to decide whether it is the typed
+ * `session_unknown` shape. Returns the parsed body or `null` when the
+ * payload does not match.
+ */
+async function parseSessionUnknownBody(
+  response: Response,
+): Promise<SessionUnknownErrorBody | null> {
+  let raw: unknown;
+  try {
+    raw = await response.json();
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.error !== 'session_unknown') return null;
+  const out: SessionUnknownErrorBody = { error: 'session_unknown' };
+  if (typeof obj.session_id === 'string') out.session_id = obj.session_id;
+  if (Array.isArray(obj.unresolved_session_ids)) {
+    out.unresolved_session_ids = (obj.unresolved_session_ids as unknown[]).filter(
+      (s): s is string => typeof s === 'string',
+    );
+  }
+  if (typeof obj.message === 'string') out.message = obj.message;
+  return out;
+}
+
+/** Pull the unresolved session IDs from a 409 body, falling back to the batch. */
+function collectUnresolvedSessionIds(
+  body: SessionUnknownErrorBody,
+  batch: EventEnvelope[],
+): Ulid[] {
+  if (body.unresolved_session_ids && body.unresolved_session_ids.length > 0) {
+    return [...body.unresolved_session_ids];
+  }
+  if (body.session_id) {
+    return [body.session_id];
+  }
+  // Last-resort: dedupe the session IDs visible on the batch.
+  const seen = new Set<Ulid>();
+  for (const env of batch) {
+    if (env.sessionId) seen.add(env.sessionId);
+  }
+  return Array.from(seen);
+}
+
 /** Injected dependencies — broken out so tests can replace them. */
 export interface TransportDeps {
   fetchImpl: typeof fetch;
@@ -113,6 +174,12 @@ export interface TransportDeps {
   /** Optional queue-cap override (defaults are derived from the runtime). */
   maxQueueEvents?: number;
   maxQueueBytes?: number;
+  /**
+   * Recovery hook invoked when an events POST returns 409 with the typed
+   * `session_unknown` body. The transport will retry the batch ONCE after
+   * the hook resolves.
+   */
+  onSessionUnknown?: (unresolvedSessionIds: Ulid[]) => Promise<void>;
 }
 
 /** Resolve queue caps based on the detected runtime. */
@@ -133,6 +200,9 @@ export class Transport {
   private readonly sleepImpl: (ms: number) => Promise<void>;
   private readonly maxQueueEvents: number;
   private readonly maxQueueBytes: number;
+  private readonly onSessionUnknown:
+    | ((unresolvedSessionIds: Ulid[]) => Promise<void>)
+    | undefined;
 
   private queue: QueueSlot[] = [];
   private queueBytes = 0;
@@ -155,6 +225,14 @@ export class Transport {
     const caps = runtimeQueueCaps();
     this.maxQueueEvents = deps.maxQueueEvents ?? caps.maxEvents;
     this.maxQueueBytes = deps.maxQueueBytes ?? caps.maxBytes;
+    this.onSessionUnknown = deps.onSessionUnknown;
+  }
+
+  /** Late-bind the recovery hook (used when the manager is constructed after the transport). */
+  setSessionUnknownHandler(
+    handler: (unresolvedSessionIds: Ulid[]) => Promise<void>,
+  ): void {
+    (this as unknown as { onSessionUnknown: typeof handler }).onSessionUnknown = handler;
   }
 
   /** Enqueue a fully-built envelope. Returns true when accepted, false when dropped. */
@@ -259,7 +337,7 @@ export class Transport {
       const batch = this.takeBatch();
       if (batch.length === 0) break;
 
-      const pending = this.postWithRetry(batch)
+      const pending = this.postBatchWithRecovery(batch)
         .then(() => {
           sent += batch.length;
         })
@@ -276,6 +354,49 @@ export class Transport {
     }
 
     return { completed: true, sent, dropped };
+  }
+
+  /**
+   * Submit a batch, with one-shot `session_unknown` recovery: on the first
+   * 409 we run the recovery hook (which re-issues session-start) and retry
+   * exactly once. A second 409 surfaces `session.recovery_failed` via
+   * `onError` and drops the batch.
+   */
+  private async postBatchWithRecovery(batch: EventEnvelope[]): Promise<void> {
+    try {
+      await this.postWithRetry(batch);
+      return;
+    } catch (err) {
+      if (!(err instanceof SessionUnknownError)) throw err;
+      if (!this.onSessionUnknown) throw err;
+      try {
+        await this.onSessionUnknown(err.unresolvedSessionIds);
+      } catch (recoveryErr) {
+        this.debugLog('session.recovery_failed', recoveryErr);
+      }
+      try {
+        await this.postWithRetry(batch);
+        return;
+      } catch (retryErr) {
+        if (retryErr instanceof SessionUnknownError) {
+          this.counters.lastError = {
+            code: 'session.recovery_failed',
+            at: new Date().toISOString(),
+          };
+          if (this.config.onError) {
+            try {
+              this.config.onError(
+                new SessionRecoveryFailedError(retryErr.unresolvedSessionIds),
+              );
+            } catch {
+              /* swallow */
+            }
+          }
+          throw retryErr;
+        }
+        throw retryErr;
+      }
+    }
   }
 
   /** Stop accepting events and return control once the queue is drained or timeout elapses. */
@@ -365,6 +486,20 @@ export class Transport {
           return;
         }
 
+        // 409 with `session_unknown` is signalled to the caller (the client
+        // owns the recovery path: re-issue session-start, retry once).
+        if (response.status === 409) {
+          const parsed = await parseSessionUnknownBody(response);
+          if (parsed) {
+            const ids = collectUnresolvedSessionIds(parsed, batch);
+            this.counters.lastError = {
+              code: 'session.unknown',
+              at: new Date().toISOString(),
+            };
+            throw new SessionUnknownError(ids);
+          }
+        }
+
         if (RETRY_STATUS_CODES.includes(response.status)) {
           retryAfterMs = parseRetryAfter(response.headers.get('Retry-After'));
         } else {
@@ -379,6 +514,7 @@ export class Transport {
         }
       } catch (err) {
         if (err instanceof TransportError) throw err;
+        if (err instanceof SessionUnknownError) throw err;
         hadError = true;
         this.debugLog('transport.network', err);
       }
@@ -397,6 +533,48 @@ export class Transport {
       const wait = retryAfterMs ?? backoffDelay(attempt);
       if (hadError) this.recordError('transport.network');
       await this.sleepImpl(wait);
+    }
+  }
+
+  /**
+   * POST a session-start payload. Best-effort — the caller fires-and-forgets
+   * for performance, so this method swallows non-2xx responses into a
+   * `TransportError` reported via `onError`. Idempotent server-side.
+   */
+  async postSessionStart(payload: SessionStartPayload): Promise<void> {
+    const url = new URL(SESSION_START_PATH, this.config.endpointUrl).toString();
+    await this.postSessionPayload(url, payload, 'session.start');
+  }
+
+  /** POST a session-end payload. Same fire-and-forget semantics as start. */
+  async postSessionEnd(payload: SessionEndPayload): Promise<void> {
+    const url = new URL(SESSION_END_PATH, this.config.endpointUrl).toString();
+    await this.postSessionPayload(url, payload, 'session.end');
+  }
+
+  private async postSessionPayload(
+    url: string,
+    payload: unknown,
+    label: string,
+  ): Promise<void> {
+    const body = JSON.stringify(payload);
+    try {
+      const response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body,
+      });
+      if (response.status >= 200 && response.status < 300) {
+        return;
+      }
+      this.recordError(`${label}.http`);
+    } catch (err) {
+      this.debugLog(`${label}.network`, err);
+      this.recordError(`${label}.network`);
     }
   }
 
