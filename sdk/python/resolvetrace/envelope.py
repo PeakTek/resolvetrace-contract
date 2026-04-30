@@ -62,6 +62,7 @@ class EventEnvelope:
     sdk: dict[str, str]
     session_id: str | None = None
     attributes: dict[str, Any] | None = None
+    actor: dict[str, Any] | None = None
     payload: dict[str, Any] = field(default_factory=dict)
 
 
@@ -91,8 +92,17 @@ def build_envelope(
         )
 
     session_id = event.get("sessionId") or event.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        # Internal invariant: the client always populates sessionId via the
+        # session manager before calling build_envelope. A missing value at
+        # this point indicates a programming error in the SDK itself.
+        raise BudgetExceededError(
+            "envelope.sessionId is required (the session manager must "
+            "populate it before envelope construction)"
+        )
     captured_at = event.get("capturedAt") or event.get("captured_at") or _iso_now(now)
     attributes = event.get("attributes")
+    actor = event.get("actor")
 
     envelope = EventEnvelope(
         event_id=generate_ulid(now=now),
@@ -100,8 +110,9 @@ def build_envelope(
         captured_at=captured_at,
         scrubber=scrubber,
         sdk={"name": sdk_name, "version": sdk_version, "runtime": sdk_runtime},
-        session_id=session_id if isinstance(session_id, str) else None,
+        session_id=session_id,
         attributes=attributes if isinstance(attributes, dict) else None,
+        actor=actor if isinstance(actor, dict) else None,
     )
 
     envelope.payload = _to_wire(envelope)
@@ -129,6 +140,8 @@ def _to_wire(envelope: EventEnvelope) -> dict[str, Any]:
         wire["sessionId"] = envelope.session_id
     if envelope.attributes is not None:
         wire["attributes"] = envelope.attributes
+    if envelope.actor is not None:
+        wire["actor"] = envelope.actor
     return wire
 
 

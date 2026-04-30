@@ -37,9 +37,16 @@ def scrubber_report() -> ScrubberReport:
     )
 
 
+_TEST_SESSION_ID = "01HZK3X4Q2P5RHARSESNHGMDPV"
+
+
 def test_build_envelope_uses_camel_case_keys(scrubber_report: ScrubberReport) -> None:
     envelope = build_envelope(
-        {"type": "app.started", "attributes": {"userAnonId": "abc"}},
+        {
+            "type": "app.started",
+            "sessionId": _TEST_SESSION_ID,
+            "attributes": {"userAnonId": "abc"},
+        },
         sdk_name="resolvetrace-py",
         sdk_version="0.1.0",
         sdk_runtime="python",
@@ -58,7 +65,7 @@ def test_build_envelope_uses_camel_case_keys(scrubber_report: ScrubberReport) ->
 
 def test_envelope_event_id_matches_ulid_pattern(scrubber_report: ScrubberReport) -> None:
     envelope = build_envelope(
-        {"type": "dom.click"},
+        {"type": "dom.click", "sessionId": _TEST_SESSION_ID},
         sdk_name="resolvetrace-py",
         sdk_version="0.1.0",
         sdk_runtime="python",
@@ -89,7 +96,7 @@ def test_envelope_session_id_supports_camel_and_snake_input(
 
 def test_envelope_scrubber_fields_present(scrubber_report: ScrubberReport) -> None:
     envelope = build_envelope(
-        {"type": "anything"},
+        {"type": "anything", "sessionId": _TEST_SESSION_ID},
         sdk_name="n",
         sdk_version="0.1.0",
         sdk_runtime="python",
@@ -107,7 +114,20 @@ def test_envelope_rejects_bad_type(scrubber_report: ScrubberReport) -> None:
 
     with pytest.raises(BudgetExceededError):
         build_envelope(
-            {"type": "contains spaces"},
+            {"type": "contains spaces", "sessionId": _TEST_SESSION_ID},
+            sdk_name="n",
+            sdk_version="0.1.0",
+            sdk_runtime="python",
+            scrubber=scrubber_report,
+        )
+
+
+def test_envelope_requires_session_id(scrubber_report: ScrubberReport) -> None:
+    from resolvetrace.errors import BudgetExceededError
+
+    with pytest.raises(BudgetExceededError):
+        build_envelope(
+            {"type": "needs.session"},
             sdk_name="n",
             sdk_version="0.1.0",
             sdk_runtime="python",
@@ -119,7 +139,7 @@ def test_envelope_validates_against_pydantic_schema_model(
     scrubber_report: ScrubberReport,
 ) -> None:
     envelope = build_envelope(
-        {"type": "app.started", "attributes": {"a": 1}},
+        {"type": "app.started", "sessionId": _TEST_SESSION_ID, "attributes": {"a": 1}},
         sdk_name="resolvetrace-py",
         sdk_version="0.1.0",
         sdk_runtime="python",
@@ -137,7 +157,7 @@ def test_envelope_captured_at_iso8601_with_milliseconds(
 ) -> None:
     now = datetime(2026, 4, 20, 12, 0, 0, 123456, tzinfo=timezone.utc)
     envelope = build_envelope(
-        {"type": "x"},
+        {"type": "x", "sessionId": _TEST_SESSION_ID},
         sdk_name="n",
         sdk_version="0.1.0",
         sdk_runtime="python",

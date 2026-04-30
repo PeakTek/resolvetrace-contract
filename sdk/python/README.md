@@ -61,13 +61,17 @@ The constructor accepts exactly two wire-affecting arguments:
 A short set of strictly-local hooks is also accepted. None of these affect
 what bytes travel on the wire:
 
-| Keyword                   | Default | Notes                                                                   |
-| ------------------------- | ------- | ----------------------------------------------------------------------- |
-| `on_error(exc)`           | `None`  | Called on every internal error so you can forward to your app's logger. |
-| `before_send(event)`      | `None`  | User-owned redaction hook. Runs *after* the SDK's built-in scrubber.    |
-| `before_send_timeout_ms`  | `4.0`   | Upper bound on the hook above; customer code may tighten, never loosen. |
-| `debug`                   | `False` | Toggles SDK-internal debug logging (no `Authorization` values logged).  |
-| `transport`               | `None`  | Inject a pre-built transport for tests only.                            |
+| Keyword                   | Default     | Notes                                                                   |
+| ------------------------- | ----------- | ----------------------------------------------------------------------- |
+| `on_error(exc)`           | `None`      | Called on every internal error so you can forward to your app's logger. |
+| `before_send(event)`      | `None`      | User-owned redaction hook. Runs *after* the SDK's built-in scrubber.    |
+| `before_send_timeout_ms`  | `4.0`       | Upper bound on the hook above; customer code may tighten, never loosen. |
+| `debug`                   | `False`     | Toggles SDK-internal debug logging (no `Authorization` values logged).  |
+| `transport`               | `None`      | Inject a pre-built transport for tests only.                            |
+| `session_inactivity_ms`   | `1_800_000` | Idle timeout (ms) before the SDK rolls a new session. May be lowered.   |
+| `session_max_duration_ms` | `43_200_000`| Hard cap (ms) on a single session's lifetime. May be lowered.           |
+| `auto_session`            | `True`      | When `False`, the SDK never auto-starts a session — you call `client.session.restart()` yourself before the first `capture()`. |
+| `session_attributes`      | `None`      | Callable returning a dict of free-form session metadata. Invoked once per session start. |
 
 Any other keyword argument is rejected with a typed `ConfigError`. In
 particular the following are **not** accepted: `tenant_id`, `environment`,
@@ -82,13 +86,49 @@ uses `snake_case` for the `get_diagnostics()` method name per PEP 8; the
 method's **return shape** is keyed `camelCase` so the serialized output
 matches the TypeScript SDK byte-for-byte.
 
-| Method                     | Purpose                                                             |
-| -------------------------- | ------------------------------------------------------------------- |
-| `capture(event) -> str`    | Enqueue one event. Returns its ULID event id synchronously.         |
-| `track(name, attrs=None)`  | Convenience wrapper around `capture` for named events.              |
-| `async flush()`            | Drain the queue immediately. Safe to call repeatedly.               |
-| `async shutdown()`         | Final flush + release of timers/tasks. Client is inert after this.  |
-| `get_diagnostics()`        | Snapshot of internal counters (queue depth, drops, last error, …). |
+| Method                          | Purpose                                                                |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| `capture(event) -> str`         | Enqueue one event. Returns its ULID event id synchronously.            |
+| `track(name, attrs=None)`       | Convenience wrapper around `capture` for named events.                 |
+| `async flush()`                 | Drain the queue immediately. Safe to call repeatedly.                  |
+| `async shutdown()`              | Final flush + release of timers/tasks. Client is inert after this.     |
+| `get_diagnostics()`             | Snapshot of internal counters (queue depth, drops, last error, …).     |
+| `client.session.id`             | Currently-active session ULID, or `None` if no session is open.        |
+| `client.session.end()`          | Explicitly end the current session and emit `POST /v1/session/end`.    |
+| `client.session.restart()`      | Synchronously rotate to a new session ULID. Returns the new id.        |
+| `client.identify(user_id, traits=None)` | Decorate the next session-start with the given identity. Pass `None` to clear. |
+
+## Sessions
+
+Every event carries a `session_id`. By default the SDK manages session
+lifecycle for you:
+
+- The first `capture()` call after `create_client(...)` lazy-starts a
+  session. A ULID is generated client-side and `POST /v1/session/start` is
+  fired in the background.
+- The session rolls over automatically after 30 minutes without a
+  `capture()` call (inactivity), or after 12 hours regardless of activity
+  (max duration). Both timeouts are configurable downward — they cannot be
+  raised above the defaults.
+- `client.session.end()` ends the current session synchronously; the next
+  `capture()` will lazy-start a fresh one.
+- `client.session.restart()` rotates immediately to a new session.
+
+Set `auto_session=False` if you want full control. In that mode the SDK
+never auto-starts; you must call `client.session.restart()` yourself before
+the first `capture()`. Capturing without an active session emits a typed
+`session_required` error via `on_error` and drops the event.
+
+`client.identify(user_id, traits)` records the active identity in memory.
+The next `POST /v1/session/start` body includes an `identify` block with
+the user id and any traits you pass. `identify(None)` clears it. This
+never issues a network call by itself — identity surfaces with the next
+session start.
+
+If `POST /v1/events` returns HTTP 409 with `{"error": "session_unknown"}`,
+the SDK reissues `POST /v1/session/start` for the same id and retries the
+batch once. A second 409 surfaces a `session_recovery_failed` error via
+`on_error`; the offending batch is dropped and the session id is kept.
 
 ## Privacy & redaction
 

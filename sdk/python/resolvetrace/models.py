@@ -209,6 +209,44 @@ class SessionEndResponse(_Wire):
 
 
 # ---------------------------------------------------------------------------
+# Session lifecycle wire payload types (TypedDict aliases for SDK callers
+# that want a structural type without pulling Pydantic into their type
+# annotations).
+# ---------------------------------------------------------------------------
+
+
+class SessionStartIdentify(TypedDict, total=False):
+    user_id: str
+    traits: dict[str, Any]
+
+
+class SessionStartPayload(TypedDict, total=False):
+    """Wire shape submitted to ``POST /v1/session/start``.
+
+    Field naming matches the TypeScript SDK so both runtimes produce
+    byte-identical request bodies for equivalent inputs.
+    """
+
+    session_id: str
+    started_at: str
+    user_agent: str
+    attributes: dict[str, Any]
+    identify: SessionStartIdentify
+
+
+class SessionEndPayload(TypedDict, total=False):
+    """Wire shape submitted to ``POST /v1/session/end``.
+
+    ``ended_reason`` carries one of: ``inactivity``, ``max_duration``,
+    ``explicit``, ``shutdown``.
+    """
+
+    session_id: str
+    ended_at: str
+    ended_reason: str
+
+
+# ---------------------------------------------------------------------------
 # API responses (schemas/api-responses.json)
 # ---------------------------------------------------------------------------
 
@@ -292,9 +330,12 @@ __all__ = [
     "ScrubberReport",
     "SdkIdentity",
     "SessionClient",
+    "SessionEndPayload",
     "SessionEndReason",
     "SessionEndRequest",
     "SessionEndResponse",
+    "SessionStartIdentify",
+    "SessionStartPayload",
     "SessionStartRequest",
     "SessionStartResponse",
     "SessionViewport",

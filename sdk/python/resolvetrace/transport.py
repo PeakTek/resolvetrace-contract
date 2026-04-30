@@ -35,7 +35,7 @@ from typing import Any, Awaitable, Callable, TypedDict
 
 import httpx
 
-from .errors import TransportError
+from .errors import SessionUnknownError, TransportError
 
 log = logging.getLogger("resolvetrace.transport")
 
@@ -145,7 +145,13 @@ class HttpTransport:
         return True
 
     async def flush(self) -> None:
-        """Drain the queue to the server in one or more HTTP batches."""
+        """Drain the queue to the server in one or more HTTP batches.
+
+        If a batch is rejected with HTTP 409 ``session_unknown``, the batch
+        is re-queued at the head and :class:`SessionUnknownError` is
+        re-raised so the caller (the client's recovery path) can re-issue
+        ``/v1/session/start`` and call ``flush()`` again to retry.
+        """
         if self._closed:
             return
         async with self._flush_lock:
@@ -153,11 +159,51 @@ class HttpTransport:
                 batch, batch_bytes = self._take_batch()
                 if not batch:
                     break
-                await self._send_batch(batch, batch_bytes)
+                try:
+                    await self._send_batch(batch, batch_bytes)
+                except SessionUnknownError:
+                    # Push the batch back so the recovery path can retry it.
+                    rehydrated: list[_QueuedEnvelope] = [
+                        {
+                            "payload": p,
+                            "bytes": len(
+                                json.dumps(p, separators=(",", ":")).encode("utf-8")
+                            ),
+                        }
+                        for p in batch
+                    ]
+                    self._queue = rehydrated + self._queue
+                    self.metrics.queue_depth = len(self._queue)
+                    self.metrics.queue_bytes = sum(
+                        item["bytes"] for item in self._queue
+                    )
+                    raise
                 self.metrics.queue_depth = len(self._queue)
                 self.metrics.queue_bytes = sum(item["bytes"] for item in self._queue)
                 if self._paused and self._under_resume_band():
                     self._paused = False
+
+    def _drop_head_batch(self) -> None:
+        """Drop one batch worth of envelopes from the head of the queue.
+
+        Used by the client's session-unknown recovery path when both the
+        original send and the recovery retry hit 409 — the batch is not
+        retriable any further, so we remove it and let subsequent flushes
+        proceed with the rest of the queue.
+        """
+        # Remove up to MAX_BATCH_EVENTS / MAX_BATCH_BYTES worth of items.
+        dropped = 0
+        dropped_bytes = 0
+        while (
+            self._queue
+            and dropped < MAX_BATCH_EVENTS
+            and dropped_bytes + self._queue[0]["bytes"] <= MAX_BATCH_BYTES
+        ):
+            head = self._queue.pop(0)
+            dropped += 1
+            dropped_bytes += head["bytes"]
+        self.metrics.queue_depth = len(self._queue)
+        self.metrics.queue_bytes = sum(item["bytes"] for item in self._queue)
 
     async def shutdown(self) -> None:
         """Flush and release the HTTP client."""
@@ -226,6 +272,42 @@ class HttpTransport:
             if response.status_code < 300:
                 return
 
+            if response.status_code == 409:
+                # Server rejected the batch because (tenant_id, session_id)
+                # could not be resolved. Surface a typed error so the
+                # caller can re-issue session/start and retry exactly once.
+                self._record_error("http_409")
+                error_body: dict[str, Any] = {}
+                try:
+                    parsed = response.json()
+                    if isinstance(parsed, dict):
+                        error_body = parsed
+                except Exception:  # pragma: no cover - defensive
+                    error_body = {}
+                if error_body.get("error") == "session_unknown":
+                    raw_unresolved = error_body.get("unresolved_session_ids")
+                    unresolved_ids: list[str] | None = None
+                    if isinstance(raw_unresolved, list):
+                        unresolved_ids = [
+                            s for s in raw_unresolved if isinstance(s, str)
+                        ]
+                    raw_session_id = error_body.get("session_id")
+                    raw_message = error_body.get("message")
+                    raise SessionUnknownError(
+                        raw_message
+                        if isinstance(raw_message, str)
+                        else "ingest rejected batch with session_unknown",
+                        session_id=raw_session_id
+                        if isinstance(raw_session_id, str)
+                        else None,
+                        unresolved_session_ids=unresolved_ids,
+                    )
+                # Other 409 — treat as non-retryable.
+                raise TransportError(
+                    f"ingest returned non-retryable status {response.status_code}",
+                    status_code=response.status_code,
+                )
+
             if response.status_code in RETRYABLE_STATUS:
                 if attempt >= MAX_RETRIES:
                     if response.status_code == 429:
@@ -256,6 +338,113 @@ class HttpTransport:
             # Full-jitter per ADR-0001: uniform in [0, cap_ms].
             wait_s = self.random_uniform(0.0, cap_ms) / 1000.0
         await self.sleep(wait_s)
+
+    # ---- session lifecycle endpoints --------------------------------------
+
+    async def post_session_start(self, payload: dict[str, Any]) -> None:
+        """POST a session-start request.
+
+        Idempotent on the server (upsert keyed by ``(tenant_id, session_id)``).
+        Retries on 5xx/network errors; 4xx other than 429 surfaces as
+        :class:`TransportError`.
+        """
+        await self._post_session("/v1/session/start", payload)
+
+    async def post_session_end(self, payload: dict[str, Any]) -> None:
+        """POST a session-end request. Same retry policy as ``post_session_start``."""
+        await self._post_session("/v1/session/end", payload)
+
+    def submit_session_start(self, payload: dict[str, Any]) -> None:
+        """Schedule ``post_session_start`` on the running event loop without awaiting.
+
+        Used by :class:`SessionManager` from sync code paths. If no loop is
+        running (e.g. before the first ``flush()``), we record the payload
+        for the next event-loop tick via a thread-bridged fallback.
+        """
+        self._fire_and_forget(self.post_session_start(payload))
+
+    def submit_session_end(
+        self, payload: dict[str, Any], *, timeout_ms: float | None = None
+    ) -> None:
+        """Schedule ``post_session_end`` on the running event loop.
+
+        ``timeout_ms`` is recorded but not enforced here; callers that want
+        a hard deadline ``await`` ``post_session_end`` directly.
+        """
+        del timeout_ms  # advisory only — full implementation pending
+        self._fire_and_forget(self.post_session_end(payload))
+
+    def _fire_and_forget(self, coro: Awaitable[None]) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None:
+            task: asyncio.Task[None] = loop.create_task(coro)  # type: ignore[arg-type]
+            task.add_done_callback(self._swallow_task_exceptions)
+            return
+        # No running loop — drive the coroutine in a fresh loop on a thread.
+        # Best-effort; the SDK is async-first and the caller is expected to
+        # be inside an event loop in production.
+        import threading as _threading
+
+        def _run() -> None:
+            asyncio.run(coro)  # type: ignore[arg-type]
+
+        _threading.Thread(target=_run, daemon=True).start()
+
+    def _swallow_task_exceptions(self, task: asyncio.Task[Any]) -> None:
+        try:
+            exc = task.exception()
+        except (asyncio.CancelledError, asyncio.InvalidStateError):
+            return
+        if exc is not None:
+            log.debug("background session task raised: %s", exc)
+
+    async def _post_session(self, path: str, payload: dict[str, Any]) -> None:
+        assert self.http_client is not None
+        url = f"{self.endpoint}{path}"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+        }
+        attempt = 0
+        while True:
+            try:
+                response = await self.http_client.post(
+                    url, json=payload, headers=headers
+                )
+            except (httpx.NetworkError, httpx.TimeoutException) as exc:
+                if attempt >= MAX_RETRIES:
+                    self._record_error("network_error")
+                    raise TransportError(
+                        f"network error after {MAX_RETRIES} retries: {exc!s}"
+                    ) from exc
+                await self._backoff(attempt, retry_after=None)
+                attempt += 1
+                continue
+
+            if response.status_code < 300:
+                return
+
+            if response.status_code in RETRYABLE_STATUS:
+                if attempt >= MAX_RETRIES:
+                    self._record_error(f"http_{response.status_code}")
+                    raise TransportError(
+                        f"ingest returned {response.status_code} after {MAX_RETRIES} retries",
+                        status_code=response.status_code,
+                    )
+                retry_after = _parse_retry_after(response.headers.get("Retry-After"))
+                await self._backoff(attempt, retry_after=retry_after)
+                attempt += 1
+                continue
+
+            self._record_error(f"http_{response.status_code}")
+            raise TransportError(
+                f"ingest returned non-retryable status {response.status_code}",
+                status_code=response.status_code,
+            )
 
     def _record_error(self, code: str) -> None:
         self.metrics.last_error_code = code

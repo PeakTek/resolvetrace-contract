@@ -30,8 +30,11 @@ from .errors import (
     BudgetExceededError,
     ConfigError,
     ResolveTraceError,
+    SessionRecoveryFailedError,
+    SessionUnknownError,
     TransportError,
 )
+from .identity import IdentityState, IdentitySnapshot
 from .models import (
     Diagnostics,
     EventBatchAcceptedResponse,
@@ -39,7 +42,16 @@ from .models import (
     ReplaySignedUrlRequest,
     ScrubberReport,
     SdkIdentity,
+    SessionEndPayload,
+    SessionStartPayload,
     SessionStartRequest,
+)
+from .session import (
+    DEFAULT_INACTIVITY_MS,
+    DEFAULT_MAX_DURATION_MS,
+    SessionManager,
+    SessionRequiredError,
+    SessionState,
 )
 
 __version__ = "0.1.0"
@@ -58,12 +70,24 @@ __all__ = [
     "ReplaySignedUrlRequest",
     "ScrubberReport",
     "SdkIdentity",
+    "SessionEndPayload",
+    "SessionStartPayload",
     "SessionStartRequest",
+    # Session manager + identity
+    "DEFAULT_INACTIVITY_MS",
+    "DEFAULT_MAX_DURATION_MS",
+    "IdentityState",
+    "IdentitySnapshot",
+    "SessionManager",
+    "SessionState",
     # Errors
     "ResolveTraceError",
     "ConfigError",
     "TransportError",
     "BudgetExceededError",
+    "SessionRecoveryFailedError",
+    "SessionRequiredError",
+    "SessionUnknownError",
     # Version
     "__version__",
 ]

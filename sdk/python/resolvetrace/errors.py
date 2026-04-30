@@ -63,3 +63,38 @@ class BudgetExceededError(ResolveTraceError):
     """
 
     code = "budget_exceeded"
+
+
+class SessionUnknownError(ResolveTraceError):
+    """Raised when ``POST /v1/events`` is rejected with HTTP 409 ``session_unknown``.
+
+    Indicates the events batch reached the server before the matching
+    ``session/start`` request was visible. The SDK responds by re-issuing
+    the start and retrying the batch once; a second 409 surfaces as a
+    ``session_recovery_failed`` callback and the batch is dropped.
+    """
+
+    code = "session_unknown"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        session_id: str | None = None,
+        unresolved_session_ids: list[str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.session_id = session_id
+        self.unresolved_session_ids = unresolved_session_ids or (
+            [session_id] if session_id else []
+        )
+
+
+class SessionRecoveryFailedError(ResolveTraceError):
+    """Raised when ``session_unknown`` recovery exhausts its single retry."""
+
+    code = "session_recovery_failed"
+
+    def __init__(self, message: str, *, session_id: str | None = None) -> None:
+        super().__init__(message)
+        self.session_id = session_id

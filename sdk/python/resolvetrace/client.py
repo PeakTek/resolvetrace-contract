@@ -18,9 +18,21 @@ from typing import Any
 
 from .config import ClientOptions, validate_options
 from .envelope import EventInput, build_envelope
-from .errors import ResolveTraceError
+from .errors import (
+    ResolveTraceError,
+    SessionRecoveryFailedError,
+    SessionUnknownError,
+)
+from .identity import IdentityState
 from .models import Diagnostics, EventsDroppedCounters, LastErrorInfo
 from .scrubber import Scrubber
+from .session import (
+    SessionConfig,
+    SessionManager,
+    SessionRequiredError,
+    _iso_now,
+    validate_session_config,
+)
 from .transport import HttpTransport
 
 log = logging.getLogger("resolvetrace.client")
@@ -68,22 +80,55 @@ class ResolveTraceClient:
                 sdk_name=SDK_NAME,
                 sdk_version=SDK_VERSION,
             )
+        self._identity = IdentityState()
+        session_config: SessionConfig = validate_session_config(
+            session_inactivity_ms=options.session_inactivity_ms,
+            session_max_duration_ms=options.session_max_duration_ms,
+            auto_session=options.auto_session,
+        )
+        self._session = SessionManager(
+            endpoint=options.endpoint,
+            transport=self._transport,
+            identity=self._identity,
+            config=session_config,
+            on_error=options.on_error,
+            session_attributes=options.session_attributes,
+        )
 
     # ---- public API --------------------------------------------------------
 
     def capture(self, event: EventInput | dict[str, Any]) -> str:
         """Enqueue a single event for transport. Returns its ULID event id."""
         try:
+            try:
+                session_id = self._session.ensure_started()
+            except SessionRequiredError as exc:
+                # auto_session=False mode without an explicit start. Drop
+                # the event and surface via on_error.
+                self._report_error(exc)
+                return ""
+
             scrubbed_attrs, scrubber_report = self._scrubber.scrub(event.get("attributes"))
             event_with_scrubbed = dict(event)
             if scrubbed_attrs is not None:
                 event_with_scrubbed["attributes"] = scrubbed_attrs
+            event_with_scrubbed.setdefault("sessionId", session_id)
+
+            # Decorate with the active identity, if any. Mirrors the TS SDK.
+            snapshot = self._identity.snapshot()
+            if snapshot.user_id is not None and "actor" not in event_with_scrubbed:
+                actor: dict[str, Any] = {"user_id": snapshot.user_id}
+                if snapshot.traits is not None:
+                    actor["traits"] = dict(snapshot.traits)
+                event_with_scrubbed["actor"] = actor
 
             if self._options.before_send is not None:
                 maybe = self._invoke_before_send(event_with_scrubbed)
                 if maybe is None:
                     return ""
                 event_with_scrubbed = maybe
+                # before_send may have stripped sessionId — re-stamp.
+                event_with_scrubbed.setdefault("sessionId", session_id)
 
             envelope = build_envelope(
                 event_with_scrubbed,
@@ -93,6 +138,7 @@ class ResolveTraceClient:
                 scrubber=scrubber_report,
             )
             self._transport.enqueue(envelope.payload)
+            self._session.note_activity()
             return envelope.event_id
         except Exception as exc:
             self._report_error(exc)
@@ -110,16 +156,77 @@ class ResolveTraceClient:
             event["attributes"] = dict(attrs)
         return self.capture(event)
 
+    @property
+    def session(self) -> SessionManager:
+        """Public handle on the session manager.
+
+        Use ``client.session.id`` for the current session ID,
+        ``client.session.end()`` / ``client.session.restart()`` for explicit
+        lifecycle control.
+        """
+        return self._session
+
+    def identify(
+        self, user_id: str | None, traits: dict[str, Any] | None = None
+    ) -> None:
+        """Set or clear the active identity.
+
+        Calling ``identify(user_id, traits)`` decorates subsequent session
+        starts with ``userAnonId``. ``identify(None)`` clears identity. No
+        network call is issued; identity surfaces with the next
+        ``/v1/session/start`` (i.e. on the next rollover).
+        """
+        self._identity.set(user_id, traits)
+
     async def flush(self) -> None:
-        """Force the transport to drain the queue synchronously.
+        """Force the transport to drain the queue.
 
         Safe to call repeatedly; returns once the queue is empty or the
-        backend returns a non-retryable error.
+        backend returns a non-retryable error. If the server rejects a
+        batch with HTTP 409 ``session_unknown``, the SDK re-issues
+        ``POST /v1/session/start`` for the active session ID and retries
+        once. A second 409 surfaces a ``session_recovery_failed`` callback
+        and the offending batch is dropped.
         """
-        await self._transport.flush()
+        try:
+            await self._transport.flush()
+        except SessionUnknownError as exc:
+            session_id = self._session.get_id()
+            if session_id is None:
+                self._report_error(exc)
+                return
+            try:
+                # Re-issue start synchronously through the transport, then
+                # retry the flush once. The transport is idempotent on the
+                # session/start path.
+                post_start = getattr(self._transport, "post_session_start", None)
+                if post_start is not None:
+                    started_at = getattr(self._session, "_started_at_iso", None) or _iso_now()
+                    await post_start(
+                        self._session.build_start_payload(session_id, started_at)
+                    )
+                await self._transport.flush()
+            except SessionUnknownError as exc2:
+                recovery = SessionRecoveryFailedError(
+                    "events batch rejected with session_unknown after a "
+                    "single recovery attempt; batch dropped",
+                    session_id=exc2.session_id or session_id,
+                )
+                self._report_error(recovery)
+                # Drop the batch from the head of the queue. We do NOT roll
+                # over the session — this is a server-side reconciliation
+                # issue, not a client-state issue.
+                drop_head = getattr(self._transport, "_drop_head_batch", None)
+                if callable(drop_head):
+                    drop_head()
 
     async def shutdown(self) -> None:
         """Final flush + release of resources. The client is inert after this."""
+        try:
+            await self.flush()
+        except Exception as exc:
+            self._report_error(exc)
+        self._session.shutdown()
         await self._transport.shutdown()
 
     def get_diagnostics(self) -> Diagnostics:

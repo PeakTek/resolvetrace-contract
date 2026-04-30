@@ -68,7 +68,19 @@ FORBIDDEN_KWARGS: frozenset[str] = frozenset(
 #: Non-wire-affecting local hooks that may be passed alongside
 #: ``api_key`` / ``endpoint`` without violating the dumb-client rule.
 PERMITTED_LOCAL_KWARGS: frozenset[str] = frozenset(
-    {"on_error", "before_send", "before_send_timeout_ms", "debug", "transport"}
+    {
+        "on_error",
+        "before_send",
+        "before_send_timeout_ms",
+        "debug",
+        "transport",
+        # Session lifecycle knobs. These are LOCAL — they govern when the
+        # SDK rolls a session over, not what gets sent on the wire.
+        "session_inactivity_ms",
+        "session_max_duration_ms",
+        "auto_session",
+        "session_attributes",
+    }
 )
 
 
@@ -88,6 +100,10 @@ class ClientOptions:
     before_send_timeout_ms: float = 4.0
     debug: bool = False
     transport: Any = field(default=None, repr=False)
+    session_inactivity_ms: int | None = None
+    session_max_duration_ms: int | None = None
+    auto_session: bool = True
+    session_attributes: Callable[[], dict[str, Any]] | None = None
 
 
 def validate_options(
@@ -149,6 +165,14 @@ def validate_options(
     if not isinstance(debug, bool):
         raise ConfigError("debug must be a boolean")
 
+    auto_session = local_kwargs.get("auto_session", True)
+    if not isinstance(auto_session, bool):
+        raise ConfigError("auto_session must be a boolean")
+
+    session_attributes = local_kwargs.get("session_attributes")
+    if session_attributes is not None and not callable(session_attributes):
+        raise ConfigError("session_attributes must be callable or omitted")
+
     return ClientOptions(
         api_key=api_key,
         endpoint=endpoint.rstrip("/"),
@@ -157,6 +181,10 @@ def validate_options(
         before_send_timeout_ms=float(before_send_timeout_ms),
         debug=debug,
         transport=local_kwargs.get("transport"),
+        session_inactivity_ms=local_kwargs.get("session_inactivity_ms"),
+        session_max_duration_ms=local_kwargs.get("session_max_duration_ms"),
+        auto_session=auto_session,
+        session_attributes=session_attributes,
     )
 
 
