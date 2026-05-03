@@ -1,23 +1,28 @@
 # Conformance harness job.
 #
 # Runs the black-box suite under `conformance/` against the published OSS
-# ingest server image (`ghcr.io/peaktek/resolvetrace-core:latest`, produced
-# by the `resolvetrace-core` repository). The job is a first-class gate:
-# any conformance regression blocks the PR.
+# ingest server image (`ghcr.io/peaktek/resolvetrace-core:sha-<shortsha>`,
+# produced by the `resolvetrace-core` repository). The job is a first-class
+# gate: any conformance regression blocks the PR.
 #
 # Container layout:
-#   - `ingest` runs as a GitHub Actions service so the runner waits for
-#     its baked-in HEALTHCHECK before executing the harness step.
-#   - MinIO runs via `docker run -d` in a setup step (not as a GHA
-#     service) because the official `minio/minio` image needs the
-#     `server /data` command at launch — GitHub Actions `services:` has
-#     no `command` field. We attach the manual container to the same
-#     auto-generated docker network GitHub creates for the job's services,
-#     under the network alias `minio`, so the ingest container can reach
-#     it at `http://minio:9000` exactly as if it were a sibling service.
+#   - `ingest` and `minio` are both started via `docker run -d` in setup
+#     steps and joined to a user-defined docker network (`rt-conformance`)
+#     created at the top of the job. We do NOT use GitHub Actions
+#     `services:` for ingest: a `services:` pull failure terminates the job
+#     before any user step runs, leaving no in-band place to retry the
+#     GHCR pull. Pulling explicitly with retry-and-backoff makes transient
+#     GHCR 5xx and timeouts recoverable.
+#   - MinIO has always been a manual `docker run` step because the
+#     official `minio/minio` image needs the `server /data` command at
+#     launch and GitHub Actions `services:` has no `command` field.
 #     (bitnami/minio — the usual workaround that bakes `server /data` into
 #     the entrypoint — was moved to a restricted Broadcom registry in
 #     Aug 2025; see velero-io/velero#9279.)
+#   - The shared user network gives both containers stable hostnames
+#     (`ingest`, `minio`) for in-network traffic. Host port mappings keep
+#     the runner's `http://localhost:4317` and `http://localhost:9000`
+#     access paths identical to the previous services-based setup.
 #
 # The weekly `schedule:` trigger re-runs the full harness against whatever
 # image tags are pinned today, so an upstream tag removal (as happened with
@@ -47,64 +52,86 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    services:
-      ingest:
-        # Image is published from the resolvetrace-core repo. This service
-        # block pulls the pinned tag and exposes it to the harness step
-        # below on ingest:4317.
-        image: ghcr.io/peaktek/resolvetrace-core:latest
-        env:
-          # Auth: the harness sends Bearer rt_ci_conformance_key; the OSS
-          # server authorises that exact value via OSS_API_KEY.
-          OSS_API_KEY: rt_ci_conformance_key
-          # Required env for the single-tenant resolver + storage adapters to
-          # pass their startup config checks. Values that need to reach a
-          # real backend (S3) point at the `minio` container the setup step
-          # starts; the rest remain stubs since the harness doesn't exercise
-          # DB or Redis.
-          DATABASE_URL: 'postgres://stub:stub@localhost:5432/stub'
-          REDIS_URL: 'redis://localhost:6379/0'
-          S3_BUCKET: 'conformance-stub'
-          S3_ENDPOINT: 'http://minio:9000'
-          AWS_REGION: 'us-east-1'
-          # Must match the MINIO_ROOT_USER / MINIO_ROOT_PASSWORD the setup
-          # step passes to MinIO, so the AWS SDK's HeadObject succeeds.
-          AWS_ACCESS_KEY_ID: 'conformance'
-          AWS_SECRET_ACCESS_KEY: 'conformance'
-          RESOLVETRACE_TENANT_ID: 'oss-single-tenant'
-          RESOLVETRACE_ENV: 'dev'
-        ports:
-          - 4317:4317
-        # No --health-cmd override here: the Dockerfile already defines a
-        # Node-based HEALTHCHECK that pokes http://127.0.0.1:$PORT/health.
-        # The base image (node:20-bookworm-slim) ships without wget/curl, so
-        # a wget-based --health-cmd would stall the container as "unhealthy"
-        # even when the server is serving traffic. Docker uses the image's
-        # baked-in HEALTHCHECK when no override is set; GitHub waits for
-        # "healthy" before running the harness step.
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Start MinIO on the services network
+      - name: Create shared docker network
+        # Both ingest and MinIO join this network so they can reach each
+        # other by name (ingest -> minio:9000). Replaces the previous
+        # `github_network_*` auto-discovery, which only existed when the
+        # job declared GHA `services:` entries.
+        run: docker network create rt-conformance
+
+      - name: Pull ingest image (with retry)
+        # Pinned to a commit-SHA tag (sha-<shortsha>) published by the
+        # resolvetrace-core publish-image workflow. Floating `:latest`
+        # would let an upstream push silently change CI behaviour. Bump
+        # by updating the tag deliberately when the new core revision is
+        # known-compatible.
+        #
+        # Explicit retry coverage on the GHCR pull: services-style pulls
+        # have no in-band retry hook, and a single transient 5xx kills
+        # the job before step 1. 5 attempts × 10s backoff = 50s ceiling
+        # plus per-attempt timeout, well inside the job's 20-minute cap.
         run: |
-          # Discover the docker network GitHub created for this job's
-          # services. The name is `github_network_<random>`; we find the
-          # single match and join the manual MinIO container to it so the
-          # ingest service can reach it by name.
-          NETWORK=$(docker network ls --filter name=github_network --format '{{.Name}}' | head -n1)
-          if [ -z "$NETWORK" ]; then
-            echo "::error::no github_network_* network found"
-            exit 1
-          fi
-          echo "joining network: $NETWORK"
+          IMAGE="ghcr.io/peaktek/resolvetrace-core:sha-dbab336"
+          for i in 1 2 3 4 5; do
+            if docker pull "$IMAGE"; then
+              echo "pulled on attempt $i"
+              exit 0
+            fi
+            echo "pull attempt $i failed; sleeping 10s"
+            sleep 10
+          done
+          echo "::error::failed to pull $IMAGE after 5 attempts"
+          exit 1
+
+      - name: Start ingest container on the shared network
+        run: |
+          docker run -d \
+            --name ingest \
+            --network rt-conformance \
+            --network-alias ingest \
+            -p 4317:4317 \
+            -e OSS_API_KEY=rt_ci_conformance_key \
+            -e DATABASE_URL='postgres://stub:stub@localhost:5432/stub' \
+            -e REDIS_URL='redis://localhost:6379/0' \
+            -e S3_BUCKET='conformance-stub' \
+            -e S3_ENDPOINT='http://minio:9000' \
+            -e AWS_REGION='us-east-1' \
+            -e AWS_ACCESS_KEY_ID='conformance' \
+            -e AWS_SECRET_ACCESS_KEY='conformance' \
+            -e RESOLVETRACE_TENANT_ID='oss-single-tenant' \
+            -e RESOLVETRACE_ENV='dev' \
+            ghcr.io/peaktek/resolvetrace-core:sha-dbab336
+
+      - name: Wait for ingest readiness
+        # Polls the ingest /health endpoint via the host port mapping.
+        # Replaces the implicit GitHub-services healthcheck wait. The
+        # image's baked-in HEALTHCHECK still runs inside the container,
+        # but we don't depend on Docker reporting "healthy" to gate the
+        # next step.
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4317/health; then
+              echo "ingest is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::ingest did not become ready within 60s."
+          docker logs ingest || true
+          exit 1
+
+      - name: Start MinIO on the shared network
+        run: |
           # MinIO image pinned to a specific release tag for supply-chain
           # hygiene — floating `:latest` would let an upstream push silently
           # change CI behaviour. Bump by updating the tag deliberately.
           docker run -d \
             --name minio \
-            --network "$NETWORK" \
+            --network rt-conformance \
             --network-alias minio \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=conformance \
@@ -128,7 +155,7 @@ jobs:
       - name: Map minio hostname to localhost for runner-side fetches
         run: |
           # Presigned URLs the ingest server mints point at `http://minio:9000`
-          # (the hostname it sees over the services docker network). AWS SigV4
+          # (the hostname it sees over the shared docker network). AWS SigV4
           # pins the Host header into the signature, so the harness's PUT
           # must use the same hostname. Point `minio` at localhost on the
           # runner so fetch() resolves it and reaches MinIO over the mapped
@@ -141,7 +168,7 @@ jobs:
           # The AWS CLI on the runner talks to MinIO with the same keys as
           # the ingest server; only the endpoint differs (runner reaches
           # MinIO via the mapped localhost port, ingest reaches it over the
-          # service network at http://minio:9000).
+          # shared network at http://minio:9000).
           AWS_ACCESS_KEY_ID: conformance
           AWS_SECRET_ACCESS_KEY: conformance
           AWS_REGION: us-east-1
@@ -197,11 +224,14 @@ jobs:
           CONFORMANCE_FORMAT: tap
         run: npx tsx src/index.ts
 
-      - name: Stop manually-run MinIO container
+      - name: Stop ingest container
         if: always()
-        # The `minio` container was started by `docker run` in a step, not as
-        # a GHA `services:` entry, so GitHub's auto-cleanup doesn't know to
-        # remove it — which leaves the services network with an active
-        # endpoint and surfaces a "network rm failed" warning at job end.
-        # Remove it explicitly so teardown is clean.
+        run: docker rm -f ingest 2>/dev/null || true
+
+      - name: Stop MinIO container
+        if: always()
         run: docker rm -f minio 2>/dev/null || true
+
+      - name: Remove shared docker network
+        if: always()
+        run: docker network rm rt-conformance 2>/dev/null || true
