@@ -4,6 +4,29 @@
   "title": "ResolveTrace event envelope and batch",
   "description": "Wire-format schemas for events sent to POST /v1/events, including the per-event envelope and batch request shape.",
   "definitions": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Caller-supplied identity decoration.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Caller-provided opaque user identifier. Set by client.identify(...). Opaque to the server; MUST NOT be a PII value.",
+          "type": "string"
+        },
+        "traits": {
+          "description": "Free-form trait bag attached by client.identify(...).",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {}
+          }
+        }
+      },
+      "required": [
+        "userId"
+      ]
+    },
     "EventAttributes": {
       "description": "Customer-provided attribute bag. Keys are camelCase strings.",
       "type": "object",
@@ -162,6 +185,29 @@
                   "name",
                   "version"
                 ]
+              },
+              "actor": {
+                "additionalProperties": false,
+                "description": "Caller-supplied identity decoration.",
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "description": "Caller-provided opaque user identifier. Set by client.identify(...). Opaque to the server; MUST NOT be a PII value.",
+                    "type": "string"
+                  },
+                  "traits": {
+                    "description": "Free-form trait bag attached by client.identify(...).",
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  }
+                },
+                "required": [
+                  "userId"
+                ]
               }
             },
             "required": [
@@ -289,6 +335,29 @@
           "required": [
             "name",
             "version"
+          ]
+        },
+        "actor": {
+          "additionalProperties": false,
+          "description": "Caller-supplied identity decoration.",
+          "type": "object",
+          "properties": {
+            "userId": {
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "Caller-provided opaque user identifier. Set by client.identify(...). Opaque to the server; MUST NOT be a PII value.",
+              "type": "string"
+            },
+            "traits": {
+              "description": "Free-form trait bag attached by client.identify(...).",
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {}
+              }
+            }
+          },
+          "required": [
+            "userId"
           ]
         }
       },

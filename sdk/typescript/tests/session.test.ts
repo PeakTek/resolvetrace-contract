@@ -197,7 +197,7 @@ describe('SessionManager state machine', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(endCalls.length).toBe(1);
-    expect((endCalls[0] as { ended_reason: string }).ended_reason).toBe('inactivity');
+    expect((endCalls[0] as { reason: string }).reason).toBe('inactivity');
     expect(mgr.getId()).toBeNull();
 
     // Next capture lazy-starts a fresh session.
@@ -226,7 +226,7 @@ describe('SessionManager state machine', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(endCalls.length).toBe(1);
-    expect((endCalls[0] as { ended_reason: string }).ended_reason).toBe('max_duration');
+    expect((endCalls[0] as { reason: string }).reason).toBe('max_duration');
     expect(mgr.getId()).toBeNull();
     expect(startCalls.length).toBe(1);
   });
@@ -400,9 +400,9 @@ describe('SessionManager persistence (sessionStorage)', () => {
     const key = endpointStorageKey(ENDPOINT);
     const now = 1_700_000_000_000;
     storage[key] = JSON.stringify({
-      session_id: '01HZK3X4Q2P5RXX7ZZ7ZZ7ZZ7Z',
-      started_at: new Date(now - 60_000).toISOString(),
-      last_activity_at: new Date(now - 1_000).toISOString(),
+      sessionId: '01HZK3X4Q2P5RXX7ZZ7ZZ7ZZ7Z',
+      startedAt: new Date(now - 60_000).toISOString(),
+      lastActivityAt: new Date(now - 1_000).toISOString(),
     });
     const { transport, startCalls } = makeSessionTransport();
     const identity = new IdentityState();
@@ -420,14 +420,38 @@ describe('SessionManager persistence (sessionStorage)', () => {
     expect(startCalls.length).toBe(0);
   });
 
-  // 6. Stale restore discard (inactivity)
-  it('discards stored sessions whose last_activity_at exceeds inactivity window', async () => {
+  // 5b. Legacy snake_case blob: still restored (backward compatibility).
+  it('restores a legacy snake_case blob and overwrites it with camelCase on next flush', async () => {
     const key = endpointStorageKey(ENDPOINT);
     const now = 1_700_000_000_000;
     storage[key] = JSON.stringify({
       session_id: '01HZK3X4Q2P5RXX7ZZ7ZZ7ZZ7Z',
-      started_at: new Date(now - 60 * 60_000).toISOString(),
-      last_activity_at: new Date(now - 60 * 60_000).toISOString(), // 60 min ago
+      started_at: new Date(now - 60_000).toISOString(),
+      last_activity_at: new Date(now - 1_000).toISOString(),
+    });
+    const { transport, startCalls } = makeSessionTransport();
+    const identity = new IdentityState();
+    const mgr = new SessionManager({
+      endpoint: ENDPOINT,
+      transport,
+      identity,
+      now: () => now,
+    });
+    expect(mgr.getId()).toBe('01HZK3X4Q2P5RXX7ZZ7ZZ7ZZ7Z');
+    expect(mgr.ensureStarted()).toBe('01HZK3X4Q2P5RXX7ZZ7ZZ7ZZ7Z');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(startCalls.length).toBe(0);
+  });
+
+  // 6. Stale restore discard (inactivity)
+  it('discards stored sessions whose lastActivityAt exceeds inactivity window', async () => {
+    const key = endpointStorageKey(ENDPOINT);
+    const now = 1_700_000_000_000;
+    storage[key] = JSON.stringify({
+      sessionId: '01HZK3X4Q2P5RXX7ZZ7ZZ7ZZ7Z',
+      startedAt: new Date(now - 60 * 60_000).toISOString(),
+      lastActivityAt: new Date(now - 60 * 60_000).toISOString(), // 60 min ago
     });
     const { transport, startCalls } = makeSessionTransport();
     const identity = new IdentityState();
@@ -447,13 +471,13 @@ describe('SessionManager persistence (sessionStorage)', () => {
   });
 
   // 7. Stale restore discard (max-duration)
-  it('discards stored sessions whose started_at exceeds max-duration', async () => {
+  it('discards stored sessions whose startedAt exceeds max-duration', async () => {
     const key = endpointStorageKey(ENDPOINT);
     const now = 1_700_000_000_000;
     storage[key] = JSON.stringify({
-      session_id: '01HZK3X4Q2P5RXX7ZZ7ZZ7ZZ7Z',
-      started_at: new Date(now - 13 * 60 * 60_000).toISOString(), // 13 hours ago
-      last_activity_at: new Date(now - 1_000).toISOString(),
+      sessionId: '01HZK3X4Q2P5RXX7ZZ7ZZ7ZZ7Z',
+      startedAt: new Date(now - 13 * 60 * 60_000).toISOString(), // 13 hours ago
+      lastActivityAt: new Date(now - 1_000).toISOString(),
     });
     const { transport } = makeSessionTransport();
     const identity = new IdentityState();
@@ -511,15 +535,15 @@ describe('Identity decoration through createClient', () => {
 
     const startCalls = getSessionStartCalls(fetchImpl);
     expect(startCalls.length).toBe(1);
-    const startBody = read<{ identify?: { user_id: string; traits?: Record<string, unknown> } }>(
+    const startBody = read<{ identify?: { userId: string; traits?: Record<string, unknown> } }>(
       startCalls[0]!,
     );
-    expect(startBody.identify).toEqual({ user_id: 'u_42', traits: { plan: 'pro' } });
+    expect(startBody.identify).toEqual({ userId: 'u_42', traits: { plan: 'pro' } });
 
     const eventsCalls = getEventsCalls(fetchImpl);
     expect(eventsCalls.length).toBe(1);
-    const eventsBody = read<{ events: Array<{ actor?: { user_id: string } }> }>(eventsCalls[0]!);
-    expect(eventsBody.events[0]!.actor).toEqual({ user_id: 'u_42', traits: { plan: 'pro' } });
+    const eventsBody = read<{ events: Array<{ actor?: { userId: string } }> }>(eventsCalls[0]!);
+    expect(eventsBody.events[0]!.actor).toEqual({ userId: 'u_42', traits: { plan: 'pro' } });
   });
 
   // 9. Identity mid-session
@@ -542,9 +566,9 @@ describe('Identity decoration through createClient', () => {
     const eventsCalls = getEventsCalls(fetchImpl);
     expect(eventsCalls.length).toBe(2);
     const first = read<{ events: Array<{ actor?: unknown }> }>(eventsCalls[0]!);
-    const second = read<{ events: Array<{ actor?: { user_id: string } }> }>(eventsCalls[1]!);
+    const second = read<{ events: Array<{ actor?: { userId: string } }> }>(eventsCalls[1]!);
     expect(first.events[0]!.actor).toBeUndefined();
-    expect(second.events[0]!.actor).toEqual({ user_id: 'u_42' });
+    expect(second.events[0]!.actor).toEqual({ userId: 'u_42' });
   });
 
   // 10. Identity clear
@@ -566,9 +590,9 @@ describe('Identity decoration through createClient', () => {
 
     const eventsCalls = getEventsCalls(fetchImpl);
     expect(eventsCalls.length).toBe(2);
-    const first = read<{ events: Array<{ actor?: { user_id: string } }> }>(eventsCalls[0]!);
+    const first = read<{ events: Array<{ actor?: { userId: string } }> }>(eventsCalls[0]!);
     const second = read<{ events: Array<{ actor?: unknown }> }>(eventsCalls[1]!);
-    expect(first.events[0]!.actor).toEqual({ user_id: 'u_42' });
+    expect(first.events[0]!.actor).toEqual({ userId: 'u_42' });
     expect(second.events[0]!.actor).toBeUndefined();
   });
 });

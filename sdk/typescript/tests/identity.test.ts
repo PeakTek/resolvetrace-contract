@@ -12,7 +12,7 @@ describe('IdentityState', () => {
     const id = new IdentityState();
     id.set('u_42', { plan: 'pro' });
     expect(id.get()).toEqual({ userId: 'u_42', traits: { plan: 'pro' } });
-    expect(id.toActor()).toEqual({ user_id: 'u_42', traits: { plan: 'pro' } });
+    expect(id.toActor()).toEqual({ userId: 'u_42', traits: { plan: 'pro' } });
     id.clear();
     expect(id.get()).toBeNull();
     expect(id.toActor()).toBeUndefined();
@@ -21,7 +21,7 @@ describe('IdentityState', () => {
   it('set without traits omits the traits field on the actor', () => {
     const id = new IdentityState();
     id.set('u_42');
-    expect(id.toActor()).toEqual({ user_id: 'u_42' });
+    expect(id.toActor()).toEqual({ userId: 'u_42' });
   });
 
   it('set(null) clears state', () => {

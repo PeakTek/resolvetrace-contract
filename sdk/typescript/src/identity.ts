@@ -54,7 +54,7 @@ export class IdentityState {
    */
   toActor(): ActorIdentity | undefined {
     if (this.current === null) return undefined;
-    const out: ActorIdentity = { user_id: this.current.userId };
+    const out: ActorIdentity = { userId: this.current.userId };
     if (this.current.traits !== undefined) {
       out.traits = { ...this.current.traits };
     }

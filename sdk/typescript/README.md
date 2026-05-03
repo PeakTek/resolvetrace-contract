@@ -150,7 +150,7 @@ preserved.
 No. Events held in the in-memory queue are dropped if the tab closes before a
 flush completes; this is intentional so the SDK never writes user data to
 `localStorage`, cookies, or IndexedDB. The SDK does write a small
-`{session_id, started_at, last_activity_at}` record to `sessionStorage` so
+`{sessionId, startedAt, lastActivityAt}` record to `sessionStorage` so
 that the same session is preserved across same-tab page navigations; that
 record contains no event data and no PII.
 

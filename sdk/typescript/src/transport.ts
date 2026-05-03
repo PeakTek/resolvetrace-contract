@@ -137,9 +137,22 @@ async function parseSessionUnknownBody(
   const obj = raw as Record<string, unknown>;
   if (obj.error !== 'session_unknown') return null;
   const out: SessionUnknownErrorBody = { error: 'session_unknown' };
-  if (typeof obj.session_id === 'string') out.session_id = obj.session_id;
-  if (Array.isArray(obj.unresolved_session_ids)) {
-    out.unresolved_session_ids = (obj.unresolved_session_ids as unknown[]).filter(
+  // Prefer the camelCase server fields; accept legacy snake_case as a fallback
+  // for older server builds still in deployment.
+  const sessionIdField =
+    typeof obj.sessionId === 'string'
+      ? obj.sessionId
+      : typeof obj.session_id === 'string'
+        ? obj.session_id
+        : null;
+  if (sessionIdField !== null) out.sessionId = sessionIdField;
+  const unresolvedField = Array.isArray(obj.unresolvedSessionIds)
+    ? (obj.unresolvedSessionIds as unknown[])
+    : Array.isArray(obj.unresolved_session_ids)
+      ? (obj.unresolved_session_ids as unknown[])
+      : null;
+  if (unresolvedField !== null) {
+    out.unresolvedSessionIds = unresolvedField.filter(
       (s): s is string => typeof s === 'string',
     );
   }
@@ -152,11 +165,11 @@ function collectUnresolvedSessionIds(
   body: SessionUnknownErrorBody,
   batch: EventEnvelope[],
 ): Ulid[] {
-  if (body.unresolved_session_ids && body.unresolved_session_ids.length > 0) {
-    return [...body.unresolved_session_ids];
+  if (body.unresolvedSessionIds && body.unresolvedSessionIds.length > 0) {
+    return [...body.unresolvedSessionIds];
   }
-  if (body.session_id) {
-    return [body.session_id];
+  if (body.sessionId) {
+    return [body.sessionId];
   }
   // Last-resort: dedupe the session IDs visible on the batch.
   const seen = new Set<Ulid>();

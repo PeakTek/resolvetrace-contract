@@ -51,7 +51,7 @@ export interface SdkIdentity {
 /** Caller-supplied identity decorator, populated by `client.identify(...)`. */
 export interface ActorIdentity {
   /** Caller-provided opaque user identifier. */
-  user_id: string;
+  userId: string;
   /** Optional free-form trait bag. */
   traits?: Record<string, unknown>;
 }
@@ -126,28 +126,30 @@ export type SessionEndReason =
 
 /** Body sent by the SDK on `POST /v1/session/start`. */
 export interface SessionStartPayload {
-  session_id: Ulid;
-  started_at: IsoDateTime;
-  user_agent?: string;
+  sessionId: Ulid;
+  startedAt: IsoDateTime;
+  client?: {
+    userAgent?: string;
+  };
   attributes?: Record<string, unknown>;
   identify?: {
-    user_id: string;
+    userId: string;
     traits?: Record<string, unknown>;
   };
 }
 
 /** Body sent by the SDK on `POST /v1/session/end`. */
 export interface SessionEndPayload {
-  session_id: Ulid;
-  ended_at: IsoDateTime;
-  ended_reason: SessionEndReason;
+  sessionId: Ulid;
+  endedAt: IsoDateTime;
+  reason: SessionEndReason;
 }
 
 /** Body returned by the server when an events batch references an unknown session. */
 export interface SessionUnknownErrorBody {
   error: 'session_unknown';
-  session_id?: Ulid;
-  unresolved_session_ids?: Ulid[];
+  sessionId?: Ulid;
+  unresolvedSessionIds?: Ulid[];
   message?: string;
 }
 

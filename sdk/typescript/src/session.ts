@@ -1,5 +1,5 @@
 /**
- * Session manager: owns lifecycle of `session_id` for the SDK.
+ * Session manager: owns lifecycle of `sessionId` for the SDK.
  *
  * Responsibilities:
  *   - Generate and persist a per-tab session ULID.
@@ -36,11 +36,28 @@ import { generateUlid } from './ulid.js';
 /** Internal state machine label. */
 export type SessionState = 'idle' | 'active' | 'ending';
 
-/** Persisted session record stored in `sessionStorage`. */
+/**
+ * Persisted session record stored in `sessionStorage`.
+ *
+ * On RESTORE the manager accepts both the current camelCase keys and the
+ * earlier snake_case keys so a browser carrying a pre-upgrade blob continues
+ * with the same session ID. On SAVE the manager always writes camelCase.
+ */
 interface StoredSession {
-  session_id: Ulid;
-  started_at: IsoDateTime;
-  last_activity_at: IsoDateTime;
+  sessionId: Ulid;
+  startedAt: IsoDateTime;
+  lastActivityAt: IsoDateTime;
+}
+
+/** Shape of a parsed but not-yet-validated stored blob (either field naming). */
+interface StoredSessionMaybe {
+  sessionId?: unknown;
+  startedAt?: unknown;
+  lastActivityAt?: unknown;
+  // Legacy snake_case keys, accepted on read for backward compatibility.
+  session_id?: unknown;
+  started_at?: unknown;
+  last_activity_at?: unknown;
 }
 
 /** Transport surface the session manager uses. Kept narrow for tests. */
@@ -225,9 +242,9 @@ export class SessionManager {
     this.flushStoredSession();
     this.clearStoredSession();
     const payload: SessionEndPayload = {
-      session_id: id,
-      ended_at: new Date(this.nowFn()).toISOString(),
-      ended_reason: 'explicit',
+      sessionId: id,
+      endedAt: new Date(this.nowFn()).toISOString(),
+      reason: 'explicit',
     };
     try {
       const post = this.transport.postSessionEnd(payload);
@@ -258,9 +275,9 @@ export class SessionManager {
     this.clearTimers();
     this.flushStoredSession();
     const payload: SessionEndPayload = {
-      session_id: id,
-      ended_at: new Date(this.nowFn()).toISOString(),
-      ended_reason: 'shutdown',
+      sessionId: id,
+      endedAt: new Date(this.nowFn()).toISOString(),
+      reason: 'shutdown',
     };
     try {
       const post = this.transport.postSessionEnd(payload);
@@ -346,14 +363,14 @@ export class SessionManager {
 
   private buildStartPayload(id: Ulid, startedAtMs: number): SessionStartPayload {
     const payload: SessionStartPayload = {
-      session_id: id,
-      started_at: new Date(startedAtMs).toISOString(),
+      sessionId: id,
+      startedAt: new Date(startedAtMs).toISOString(),
     };
     if (isBrowser()) {
       const nav = (globalThis as { navigator?: { userAgent?: string } }).navigator;
       const ua = nav?.userAgent;
       if (typeof ua === 'string' && ua.length > 0) {
-        payload.user_agent = ua.slice(0, 512);
+        payload.client = { userAgent: ua.slice(0, 512) };
       }
     }
     const attrs: Record<string, unknown> = {};
@@ -384,13 +401,13 @@ export class SessionManager {
     }
     // Identity for the start payload: prefer the pending slot, otherwise
     // fall back to whatever identity is currently set on IdentityState.
-    let identityBlock: { user_id: string; traits?: Record<string, unknown> } | null = null;
+    let identityBlock: { userId: string; traits?: Record<string, unknown> } | null = null;
     if (this.pendingIdentityForStart !== null) {
       identityBlock =
         this.pendingIdentityForStart.traits === undefined
-          ? { user_id: this.pendingIdentityForStart.userId }
+          ? { userId: this.pendingIdentityForStart.userId }
           : {
-              user_id: this.pendingIdentityForStart.userId,
+              userId: this.pendingIdentityForStart.userId,
               traits: { ...this.pendingIdentityForStart.traits },
             };
     } else {
@@ -398,8 +415,8 @@ export class SessionManager {
       if (snap !== null) {
         identityBlock =
           snap.traits === undefined
-            ? { user_id: snap.userId }
-            : { user_id: snap.userId, traits: { ...snap.traits } };
+            ? { userId: snap.userId }
+            : { userId: snap.userId, traits: { ...snap.traits } };
       }
     }
     if (identityBlock !== null) {
@@ -461,9 +478,9 @@ export class SessionManager {
 
   private fireSessionEnd(id: Ulid, reason: SessionEndReason): void {
     const payload: SessionEndPayload = {
-      session_id: id,
-      ended_at: new Date(this.nowFn()).toISOString(),
-      ended_reason: reason,
+      sessionId: id,
+      endedAt: new Date(this.nowFn()).toISOString(),
+      reason,
     };
     void this.transport.postSessionEnd(payload).catch((err) => this.reportError(err));
   }
@@ -501,9 +518,9 @@ export class SessionManager {
       return;
     }
     if (!raw) return;
-    let parsed: StoredSession | null = null;
+    let parsed: StoredSessionMaybe | null = null;
     try {
-      parsed = JSON.parse(raw) as StoredSession;
+      parsed = JSON.parse(raw) as StoredSessionMaybe;
     } catch {
       try {
         ss.removeItem(this.storageKey);
@@ -513,15 +530,31 @@ export class SessionManager {
       return;
     }
     if (!parsed || typeof parsed !== 'object') return;
-    if (
-      typeof parsed.session_id !== 'string' ||
-      typeof parsed.started_at !== 'string' ||
-      typeof parsed.last_activity_at !== 'string'
-    ) {
+    // Accept both new camelCase keys and legacy snake_case keys so a browser
+    // carrying a pre-upgrade blob continues with the same session ID.
+    const sessionId =
+      typeof parsed.sessionId === 'string'
+        ? parsed.sessionId
+        : typeof parsed.session_id === 'string'
+          ? parsed.session_id
+          : null;
+    const startedAt =
+      typeof parsed.startedAt === 'string'
+        ? parsed.startedAt
+        : typeof parsed.started_at === 'string'
+          ? parsed.started_at
+          : null;
+    const lastActivityAt =
+      typeof parsed.lastActivityAt === 'string'
+        ? parsed.lastActivityAt
+        : typeof parsed.last_activity_at === 'string'
+          ? parsed.last_activity_at
+          : null;
+    if (sessionId === null || startedAt === null || lastActivityAt === null) {
       return;
     }
-    const startedMs = Date.parse(parsed.started_at);
-    const lastMs = Date.parse(parsed.last_activity_at);
+    const startedMs = Date.parse(startedAt);
+    const lastMs = Date.parse(lastActivityAt);
     const now = this.nowFn();
     if (
       Number.isNaN(startedMs) ||
@@ -536,7 +569,7 @@ export class SessionManager {
       }
       return;
     }
-    this.currentId = parsed.session_id;
+    this.currentId = sessionId;
     this.startedAtMs = startedMs;
     this.lastActivityMs = lastMs;
     this.lastFlushedActivityMs = lastMs;
@@ -551,9 +584,9 @@ export class SessionManager {
     if (this.currentId === null || this.startedAtMs === null) return;
     const last = this.lastActivityMs ?? this.startedAtMs;
     const stored: StoredSession = {
-      session_id: this.currentId,
-      started_at: new Date(this.startedAtMs).toISOString(),
-      last_activity_at: new Date(last).toISOString(),
+      sessionId: this.currentId,
+      startedAt: new Date(this.startedAtMs).toISOString(),
+      lastActivityAt: new Date(last).toISOString(),
     };
     try {
       ss.setItem(this.storageKey, JSON.stringify(stored));

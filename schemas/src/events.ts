@@ -168,6 +168,35 @@ export const SdkIdentity = Type.Object(
 export type SdkIdentity = Static<typeof SdkIdentity>;
 
 /* -------------------------------------------------------------------------- */
+/* Actor — caller-supplied identity decoration                                */
+/* -------------------------------------------------------------------------- */
+
+export const Actor = Type.Object(
+  {
+    userId: Type.String({
+      minLength: 1,
+      maxLength: 128,
+      description:
+        'Caller-provided opaque user identifier. Set by client.identify(...). Opaque to the server; MUST NOT be a PII value.',
+    }),
+    traits: Type.Optional(
+      Type.Record(
+        Type.String({ minLength: 1, maxLength: 128 }),
+        Type.Unknown(),
+        {
+          description: 'Free-form trait bag attached by client.identify(...).',
+        },
+      ),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description: 'Caller-supplied identity decoration.',
+  },
+);
+export type Actor = Static<typeof Actor>;
+
+/* -------------------------------------------------------------------------- */
 /* Event envelope                                                             */
 /* -------------------------------------------------------------------------- */
 
@@ -197,6 +226,7 @@ export const EventEnvelope = Type.Object(
       }),
     ),
     sdk: SdkIdentity,
+    actor: Type.Optional(Actor),
   },
   {
     additionalProperties: false,
