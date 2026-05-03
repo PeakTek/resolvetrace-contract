@@ -6,23 +6,27 @@
 # gate: any conformance regression blocks the PR.
 #
 # Container layout:
-#   - `ingest` and `minio` are both started via `docker run -d` in setup
-#     steps and joined to a user-defined docker network (`rt-conformance`)
-#     created at the top of the job. We do NOT use GitHub Actions
-#     `services:` for ingest: a `services:` pull failure terminates the job
-#     before any user step runs, leaving no in-band place to retry the
-#     GHCR pull. Pulling explicitly with retry-and-backoff makes transient
-#     GHCR 5xx and timeouts recoverable.
+#   - `postgres`, `minio`, and `ingest` are all started via `docker run -d`
+#     in setup steps and joined to a user-defined docker network
+#     (`rt-conformance`) created at the top of the job. We do NOT use
+#     GitHub Actions `services:` for ingest: a `services:` pull failure
+#     terminates the job before any user step runs, leaving no in-band
+#     place to retry the GHCR pull. Pulling explicitly with retry-and-
+#     backoff makes transient GHCR 5xx and timeouts recoverable.
+#   - Postgres comes up first: ingest runs schema migrations at boot when
+#     DATABASE_URL is set and exits if it can't reach the database, so it
+#     must connect successfully before the HTTP listener binds.
 #   - MinIO has always been a manual `docker run` step because the
 #     official `minio/minio` image needs the `server /data` command at
 #     launch and GitHub Actions `services:` has no `command` field.
 #     (bitnami/minio — the usual workaround that bakes `server /data` into
 #     the entrypoint — was moved to a restricted Broadcom registry in
 #     Aug 2025; see velero-io/velero#9279.)
-#   - The shared user network gives both containers stable hostnames
-#     (`ingest`, `minio`) for in-network traffic. Host port mappings keep
-#     the runner's `http://localhost:4317` and `http://localhost:9000`
-#     access paths identical to the previous services-based setup.
+#   - The shared user network gives the containers stable hostnames
+#     (`postgres`, `minio`, `ingest`) for in-network traffic. Host port
+#     mappings keep the runner's `http://localhost:4317` and
+#     `http://localhost:9000` access paths identical to the previous
+#     services-based setup.
 #
 # The weekly `schedule:` trigger re-runs the full harness against whatever
 # image tags are pinned today, so an upstream tag removal (as happened with
@@ -57,11 +61,41 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Create shared docker network
-        # Both ingest and MinIO join this network so they can reach each
-        # other by name (ingest -> minio:9000). Replaces the previous
-        # `github_network_*` auto-discovery, which only existed when the
-        # job declared GHA `services:` entries.
+        # Ingest, MinIO, and Postgres all join this network so they can
+        # reach each other by name (ingest -> minio:9000, ingest ->
+        # postgres:5432). Replaces the previous `github_network_*`
+        # auto-discovery, which only existed when the job declared GHA
+        # `services:` entries.
         run: docker network create rt-conformance
+
+      - name: Start Postgres on the shared network
+        # Ingest's Postgres-backed event/session sinks run schema migrations
+        # at boot when DATABASE_URL is set; if Postgres is unreachable the
+        # process exits before binding the HTTP listener. The official
+        # `postgres` image starts in <5s with the default config, fast
+        # enough to keep the readiness wait below short.
+        run: |
+          docker run -d \
+            --name postgres \
+            --network rt-conformance \
+            --network-alias postgres \
+            -e POSTGRES_USER=conformance \
+            -e POSTGRES_PASSWORD=conformance \
+            -e POSTGRES_DB=conformance \
+            postgres:16-alpine
+
+      - name: Wait for Postgres readiness
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec postgres pg_isready -U conformance -d conformance >/dev/null 2>&1; then
+              echo "Postgres is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Postgres did not become ready within 60s."
+          docker logs postgres || true
+          exit 1
 
       - name: Pull ingest image (with retry)
         # Pinned to a commit-SHA tag (sha-<shortsha>) published by the
@@ -95,7 +129,7 @@ jobs:
             --network-alias ingest \
             -p 4317:4317 \
             -e OSS_API_KEY=rt_ci_conformance_key \
-            -e DATABASE_URL='postgres://stub:stub@localhost:5432/stub' \
+            -e DATABASE_URL='postgres://conformance:conformance@postgres:5432/conformance' \
             -e REDIS_URL='redis://localhost:6379/0' \
             -e S3_BUCKET='conformance-stub' \
             -e S3_ENDPOINT='http://minio:9000' \
@@ -231,6 +265,10 @@ jobs:
       - name: Stop MinIO container
         if: always()
         run: docker rm -f minio 2>/dev/null || true
+
+      - name: Stop Postgres container
+        if: always()
+        run: docker rm -f postgres 2>/dev/null || true
 
       - name: Remove shared docker network
         if: always()
