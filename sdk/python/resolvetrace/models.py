@@ -211,13 +211,20 @@ class SessionEndResponse(_Wire):
 # ---------------------------------------------------------------------------
 # Session lifecycle wire payload types (TypedDict aliases for SDK callers
 # that want a structural type without pulling Pydantic into their type
-# annotations).
+# annotations). Keys are camelCase to match the on-the-wire shape defined by
+# ``schemas/session.json`` (and the TypeScript SDK's request bodies).
 # ---------------------------------------------------------------------------
 
 
 class SessionStartIdentify(TypedDict, total=False):
-    user_id: str
+    userId: str
     traits: dict[str, Any]
+
+
+class SessionStartClient(TypedDict, total=False):
+    """Nested ``client`` block on ``SessionStartPayload``."""
+
+    userAgent: str
 
 
 class SessionStartPayload(TypedDict, total=False):
@@ -227,9 +234,12 @@ class SessionStartPayload(TypedDict, total=False):
     byte-identical request bodies for equivalent inputs.
     """
 
-    session_id: str
-    started_at: str
-    user_agent: str
+    sessionId: str
+    startedAt: str
+    appVersion: str
+    releaseChannel: str
+    client: SessionStartClient
+    userAnonId: str
     attributes: dict[str, Any]
     identify: SessionStartIdentify
 
@@ -237,13 +247,13 @@ class SessionStartPayload(TypedDict, total=False):
 class SessionEndPayload(TypedDict, total=False):
     """Wire shape submitted to ``POST /v1/session/end``.
 
-    ``ended_reason`` carries one of: ``inactivity``, ``max_duration``,
-    ``explicit``, ``shutdown``.
+    ``reason`` carries one of the values defined by
+    :data:`SessionEndReason`.
     """
 
-    session_id: str
-    ended_at: str
-    ended_reason: str
+    sessionId: str
+    endedAt: str
+    reason: str
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +344,7 @@ __all__ = [
     "SessionEndReason",
     "SessionEndRequest",
     "SessionEndResponse",
+    "SessionStartClient",
     "SessionStartIdentify",
     "SessionStartPayload",
     "SessionStartRequest",

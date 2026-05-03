@@ -431,9 +431,9 @@ class SessionManager:
         timeout_ms: float | None = None,
     ) -> None:
         payload: dict[str, Any] = {
-            "session_id": session_id,
-            "ended_at": _iso_now(),
-            "ended_reason": reason,
+            "sessionId": session_id,
+            "endedAt": _iso_now(),
+            "reason": reason,
         }
         try:
             self._transport.submit_session_end(payload, timeout_ms=timeout_ms)
@@ -448,24 +448,37 @@ class SessionManager:
         inputs in both runtimes.
         """
         payload: dict[str, Any] = {
-            "session_id": session_id,
-            "started_at": started_at,
+            "sessionId": session_id,
+            "startedAt": started_at,
         }
         # Session attributes — host-supplied free-form metadata.
         attrs = self._collect_session_attributes() or {}
-        # The TS SDK pulls user_agent off the navigator inside the payload
-        # builder; in Python we lift it out of attrs so callers can populate
-        # it via session_attributes.
-        ua = attrs.pop("user_agent", None) or attrs.pop("userAgent", None)
+        # The schema places userAgent under client.userAgent (nested), not at
+        # the top level. Lift it out of attrs into a nested object.
+        ua = attrs.pop("userAgent", None) or attrs.pop("user_agent", None)
         if isinstance(ua, str) and ua:
-            payload["user_agent"] = ua[:512]
+            payload["client"] = {"userAgent": ua[:512]}
+        # The schema also defines top-level appVersion / releaseChannel /
+        # userAnonId slots; lift those out of attrs (snake or camel) so they
+        # land in their canonical location.
+        app_version = attrs.pop("appVersion", None) or attrs.pop("app_version", None)
+        if isinstance(app_version, str) and app_version:
+            payload["appVersion"] = app_version
+        release_channel = attrs.pop("releaseChannel", None) or attrs.pop(
+            "release_channel", None
+        )
+        if isinstance(release_channel, str) and release_channel:
+            payload["releaseChannel"] = release_channel
+        user_anon_id = attrs.pop("userAnonId", None) or attrs.pop("user_anon_id", None)
+        if isinstance(user_anon_id, str) and user_anon_id:
+            payload["userAnonId"] = user_anon_id
         if attrs:
             payload["attributes"] = attrs
 
         # Identity — included only when set before the first capture.
         snapshot = self._identity.snapshot()
         if snapshot.user_id is not None:
-            identify_block: dict[str, Any] = {"user_id": snapshot.user_id}
+            identify_block: dict[str, Any] = {"userId": snapshot.user_id}
             if snapshot.traits is not None:
                 identify_block["traits"] = dict(snapshot.traits)
             payload["identify"] = identify_block

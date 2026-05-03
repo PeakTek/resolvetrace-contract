@@ -117,7 +117,7 @@ class ResolveTraceClient:
             # Decorate with the active identity, if any. Mirrors the TS SDK.
             snapshot = self._identity.snapshot()
             if snapshot.user_id is not None and "actor" not in event_with_scrubbed:
-                actor: dict[str, Any] = {"user_id": snapshot.user_id}
+                actor: dict[str, Any] = {"userId": snapshot.user_id}
                 if snapshot.traits is not None:
                     actor["traits"] = dict(snapshot.traits)
                 event_with_scrubbed["actor"] = actor
@@ -172,9 +172,11 @@ class ResolveTraceClient:
         """Set or clear the active identity.
 
         Calling ``identify(user_id, traits)`` decorates subsequent session
-        starts with ``userAnonId``. ``identify(None)`` clears identity. No
-        network call is issued; identity surfaces with the next
-        ``/v1/session/start`` (i.e. on the next rollover).
+        starts with an ``identify: { userId, traits? }`` block and stamps an
+        ``actor: { userId, traits? }`` block on every captured event.
+        ``identify(None)`` clears identity. No network call is issued
+        directly; identity surfaces with the next ``/v1/session/start`` and
+        on each subsequent ``capture`` until cleared.
         """
         self._identity.set(user_id, traits)
 

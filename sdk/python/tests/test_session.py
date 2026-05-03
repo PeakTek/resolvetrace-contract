@@ -71,7 +71,7 @@ def test_lazy_start_emits_session_start_and_assigns_id() -> None:
     assert ULID_PATTERN.match(sid)
     assert manager.id == sid
     assert len(transport.starts) == 1
-    assert transport.starts[0]["session_id"] == sid
+    assert transport.starts[0]["sessionId"] == sid
 
 
 # ---- Test 2: no double-start ----------------------------------------------
@@ -103,7 +103,7 @@ def test_inactivity_rollover_starts_a_fresh_session() -> None:
     sid_b = manager.ensure_started()
     assert sid_b != sid_a
     assert len(transport.starts) == 2
-    assert transport.ends and transport.ends[-1]["ended_reason"] == "inactivity"
+    assert transport.ends and transport.ends[-1]["reason"] == "inactivity"
 
 
 # ---- Test 4: max-duration rollover ----------------------------------------
@@ -129,7 +129,7 @@ def test_max_duration_rollover_fires_even_with_activity() -> None:
     assert manager.id is None
     sid_b = manager.ensure_started()
     assert sid_b != sid_a
-    assert transport.ends and transport.ends[-1]["ended_reason"] == "max_duration"
+    assert transport.ends and transport.ends[-1]["reason"] == "max_duration"
 
 
 # ---- Tests 5-7 skipped: sessionStorage parity tests not applicable in Python --
@@ -145,7 +145,7 @@ def test_identity_set_before_capture_decorates_session_start() -> None:
 
     manager.ensure_started()
     payload = transport.starts[0]
-    assert payload["identify"] == {"user_id": "u_42", "traits": {"plan": "pro"}}
+    assert payload["identify"] == {"userId": "u_42", "traits": {"plan": "pro"}}
 
 
 # ---- Test 9: identity-mid-session -----------------------------------------
@@ -172,7 +172,7 @@ def test_identity_clear_removes_identify_from_next_start() -> None:
     manager, transport, _, _ = _make_manager(identity=identity)
     identity.set("u_1")
     manager.ensure_started()
-    assert transport.starts[0].get("identify") == {"user_id": "u_1"}
+    assert transport.starts[0].get("identify") == {"userId": "u_1"}
 
     # Roll over and clear identity.
     identity.set(None)
@@ -215,8 +215,8 @@ def test_end_clears_state_and_emits_end_request() -> None:
     manager.end()
     assert manager.id is None
     assert len(transport.ends) == 1
-    assert transport.ends[0]["session_id"] == sid
-    assert transport.ends[0]["ended_reason"] == "explicit"
+    assert transport.ends[0]["sessionId"] == sid
+    assert transport.ends[0]["reason"] == "explicit"
 
 
 # ---- Test 16: restart() synchronous return --------------------------------
@@ -230,8 +230,8 @@ def test_restart_synchronously_returns_new_id() -> None:
     assert new_id != old_id
     assert manager.id == new_id
     # restart() emits both an end (for old) and a start (for new).
-    assert any(e["session_id"] == old_id for e in transport.ends)
-    assert any(s["session_id"] == new_id for s in transport.starts)
+    assert any(e["sessionId"] == old_id for e in transport.ends)
+    assert any(s["sessionId"] == new_id for s in transport.starts)
 
 
 # ---- Test 17: config validation -------------------------------------------
@@ -315,7 +315,7 @@ def test_shutdown_cancels_pending_timers_and_emits_final_end() -> None:
     assert active == []
     # Shutdown emits exactly one end with reason 'shutdown'.
     assert len(transport.ends) == 1
-    assert transport.ends[0]["ended_reason"] == "shutdown"
+    assert transport.ends[0]["reason"] == "shutdown"
     # Subsequent ensure_started raises (client is inert).
     with pytest.raises(ResolveTraceError):
         manager.ensure_started()
@@ -339,21 +339,24 @@ def test_state_transitions_idle_active_idle() -> None:
 def test_session_attributes_callable_populates_payload() -> None:
     def attrs() -> dict[str, object]:
         return {
-            "user_agent": "TestRunner/1.0",
+            "userAgent": "TestRunner/1.0",
             "page_url": "https://example.com/home",
             "viewport": "1440x900",
-            "app_version": "0.0.1",
+            "appVersion": "0.0.1",
         }
 
     manager, transport, _, _ = _make_manager(session_attributes=attrs)
     manager.ensure_started()
     payload = transport.starts[0]
-    # user_agent is hoisted to the top level.
-    assert payload["user_agent"] == "TestRunner/1.0"
+    # userAgent is hoisted into the nested `client` object.
+    assert payload["client"] == {"userAgent": "TestRunner/1.0"}
+    # appVersion is hoisted to its top-level slot.
+    assert payload["appVersion"] == "0.0.1"
     # The remaining keys land in `attributes`, free-form.
     assert payload["attributes"]["page_url"] == "https://example.com/home"
     assert payload["attributes"]["viewport"] == "1440x900"
-    assert payload["attributes"]["app_version"] == "0.0.1"
+    assert "appVersion" not in payload["attributes"]
+    assert "userAgent" not in payload["attributes"]
 
 
 def test_session_attributes_callable_failure_swallowed() -> None:
@@ -381,15 +384,24 @@ def test_session_start_payload_has_iso_milliseconds_and_ulid_session_id() -> Non
 
     payload = transport.starts[0]
     # Required fields.
-    assert ULID_PATTERN.match(payload["session_id"])
+    assert ULID_PATTERN.match(payload["sessionId"])
     # ISO-8601 with millisecond precision and Z suffix.
     assert re.match(
-        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", payload["started_at"]
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", payload["startedAt"]
     )
     # Identity slot.
-    assert payload["identify"] == {"user_id": "u_42", "traits": {"plan": "pro"}}
+    assert payload["identify"] == {"userId": "u_42", "traits": {"plan": "pro"}}
     # No surprise fields.
-    allowed_keys = {"session_id", "started_at", "user_agent", "attributes", "identify"}
+    allowed_keys = {
+        "sessionId",
+        "startedAt",
+        "appVersion",
+        "releaseChannel",
+        "client",
+        "userAnonId",
+        "attributes",
+        "identify",
+    }
     assert set(payload.keys()) <= allowed_keys
 
 
@@ -397,9 +409,9 @@ def test_session_start_payload_field_order_matches_typescript_sdk() -> None:
     """Field-order parity check vs the TypeScript SDK.
 
     The TS SDK builds the payload as an object literal with the keys in
-    the order: session_id, started_at, [user_agent], [attributes],
-    [identify]. ``json.dumps`` preserves dict insertion order in Python
-    3.7+, so equivalent inputs MUST serialize byte-for-byte identically.
+    the order: sessionId, startedAt, [client], [attributes], [identify].
+    ``json.dumps`` preserves dict insertion order in Python 3.7+, so
+    equivalent inputs MUST serialize byte-for-byte identically.
     """
     import json
 
@@ -408,7 +420,7 @@ def test_session_start_payload_field_order_matches_typescript_sdk() -> None:
 
     def attrs() -> dict[str, object]:
         return {
-            "user_agent": "Mozilla/5.0 ...",
+            "userAgent": "Mozilla/5.0 ...",
             "page_url": "https://app.example.com/dashboard",
             "viewport": "1440x900",
         }
@@ -419,21 +431,11 @@ def test_session_start_payload_field_order_matches_typescript_sdk() -> None:
     manager.ensure_started()
     payload = transport.starts[0]
 
-    # Force a known ULID + timestamp to make the byte-equivalence check
-    # purely structural.
-    fixed = {
-        "session_id": "01HZK3X4Q2P5RXXXXXXXXXXXXX",
-        "started_at": "2026-04-29T14:23:01.000Z",
-        "user_agent": "Mozilla/5.0 ...",
-        "attributes": {
-            "page_url": "https://app.example.com/dashboard",
-            "viewport": "1440x900",
-        },
-        "identify": {"user_id": "u_42", "traits": {"plan": "pro"}},
-    }
-    # Same key set and same field order.
-    assert list(payload.keys()) == list(fixed.keys())
+    # Expected key order matches the TS SDK's object-literal construction.
+    expected_keys = ["sessionId", "startedAt", "client", "attributes", "identify"]
+    assert list(payload.keys()) == expected_keys
     encoded = json.dumps(payload, separators=(",", ":"))
     # Sanity check: separators match what the transport uses.
-    assert encoded.startswith('{"session_id":')
-    assert '"started_at":' in encoded
+    assert encoded.startswith('{"sessionId":')
+    assert '"startedAt":' in encoded
+    assert '"client":{"userAgent":' in encoded

@@ -4,12 +4,11 @@ Holds the in-memory ``(user_id, traits)`` pair set by ``client.identify(...)``.
 Kept separate from session lifecycle so identity changes never roll over a
 session.
 
-The wire-format mapping in the current contract surfaces identity at session
-start time via the ``userAnonId`` field on ``/v1/session/start``. Free-form
-``traits`` are not carried on the wire today (the event envelope schema is
-``additionalProperties: false`` and has no slot for them); they remain
-available via :meth:`IdentityState.snapshot` for in-process use, e.g. by a
-custom ``before_send`` hook that wants to inject them into ``attributes``.
+The wire-format mapping in the current contract surfaces identity in two
+places: the ``identify`` block on ``/v1/session/start`` (``{ userId, traits? }``)
+and the ``actor`` decoration on every event envelope captured while an
+identity is set (``{ userId, traits? }``). Both use camelCase wire keys.
+``traits`` is carried as a free-form trait bag in both shapes.
 """
 
 from __future__ import annotations
