@@ -214,6 +214,29 @@
         "acceptedAt"
       ]
     },
+    "SessionStartIdentify": {
+      "additionalProperties": false,
+      "description": "Identity decoration folded in from a client.identify(...) call that occurred before session start.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Customer-provided identified-user identifier. Opaque to the server; MUST NOT be a PII value.",
+          "type": "string"
+        },
+        "traits": {
+          "description": "Free-form trait bag attached at session start via client.identify(...).",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {}
+          }
+        }
+      },
+      "required": [
+        "userId"
+      ]
+    },
     "SessionStartRequest": {
       "additionalProperties": false,
       "title": "SessionStartRequest",
@@ -313,6 +336,29 @@
           "maxLength": 128,
           "description": "Customer-provided anonymous user identifier. Opaque to the server; MUST NOT be a PII value.",
           "type": "string"
+        },
+        "identify": {
+          "additionalProperties": false,
+          "description": "Identity decoration folded in from a client.identify(...) call that occurred before session start.",
+          "type": "object",
+          "properties": {
+            "userId": {
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "Customer-provided identified-user identifier. Opaque to the server; MUST NOT be a PII value.",
+              "type": "string"
+            },
+            "traits": {
+              "description": "Free-form trait bag attached at session start via client.identify(...).",
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {}
+              }
+            }
+          },
+          "required": [
+            "userId"
+          ]
         }
       },
       "required": [

@@ -112,6 +112,32 @@ export const ReleaseChannel = Type.Union(
   },
 );
 
+export const SessionStartIdentify = Type.Object(
+  {
+    userId: Type.String({
+      minLength: 1,
+      maxLength: 128,
+      description:
+        'Customer-provided identified-user identifier. Opaque to the server; MUST NOT be a PII value.',
+    }),
+    traits: Type.Optional(
+      Type.Record(
+        Type.String({ minLength: 1, maxLength: 128 }),
+        Type.Unknown(),
+        {
+          description:
+            'Free-form trait bag attached at session start via client.identify(...).',
+        },
+      ),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description:
+      'Identity decoration folded in from a client.identify(...) call that occurred before session start.',
+  },
+);
+
 export const SessionStartRequest = Type.Object(
   {
     sessionId: Ulid,
@@ -136,6 +162,7 @@ export const SessionStartRequest = Type.Object(
           'Customer-provided anonymous user identifier. Opaque to the server; MUST NOT be a PII value.',
       }),
     ),
+    identify: Type.Optional(SessionStartIdentify),
   },
   {
     additionalProperties: false,
