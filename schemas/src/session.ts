@@ -170,6 +170,9 @@ export const SessionEndReason = Type.Union(
     Type.Literal('timeout'),
     Type.Literal('shutdown'),
     Type.Literal('error'),
+    Type.Literal('inactivity'),
+    Type.Literal('max_duration'),
+    Type.Literal('explicit'),
   ],
   {
     description:

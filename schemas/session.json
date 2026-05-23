@@ -101,6 +101,18 @@
         {
           "const": "error",
           "type": "string"
+        },
+        {
+          "const": "inactivity",
+          "type": "string"
+        },
+        {
+          "const": "max_duration",
+          "type": "string"
+        },
+        {
+          "const": "explicit",
+          "type": "string"
         }
       ]
     },
@@ -146,6 +158,18 @@
             },
             {
               "const": "error",
+              "type": "string"
+            },
+            {
+              "const": "inactivity",
+              "type": "string"
+            },
+            {
+              "const": "max_duration",
+              "type": "string"
+            },
+            {
+              "const": "explicit",
               "type": "string"
             }
           ]
