@@ -211,6 +211,66 @@ jobs:
       - name: Validate OpenAPI spec structure
         run: npm run validate:openapi
 
+  validate-sdk-output:
+    name: validate-sdk-output
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Runs after build-schemas so the validator compares SDK output against
+    # freshly-emitted schemas, not whatever was committed. Each job runs in
+    # a fresh runner, so this job re-runs `npm run build:schemas` itself.
+    needs: build-schemas
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Detect lockfile
+        id: lockfile
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node 20 (with cache)
+        if: steps.lockfile.outputs.present == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Node 20 (no cache)
+        if: steps.lockfile.outputs.present == 'false'
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Install Node dependencies (root)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Install Node dependencies (SDK)
+        run: |
+          if [ -f sdk/typescript/package-lock.json ]; then
+            npm --prefix sdk/typescript ci
+          else
+            npm --prefix sdk/typescript install --no-audit --no-fund
+          fi
+
+      - name: Build emitted JSON Schemas (defensive — needs job already did this in a separate runner)
+        run: npm run build:schemas
+
+      - name: Build TypeScript SDK to dist
+        run: npm --prefix sdk/typescript run build
+
+      - name: Validate SDK wire output against schemas
+        run: npm run validate:sdk-output
+
   oasdiff:
     name: oasdiff
     runs-on: ubuntu-latest
