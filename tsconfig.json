@@ -16,5 +16,6 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["schemas/src/**/*.ts", "scripts/**/*.ts"]
+  "include": ["schemas/src/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["scripts/dump-ts-sdk-payloads.ts"]
 }
