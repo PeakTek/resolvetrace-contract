@@ -10,6 +10,7 @@ import {
   ALLOWED_AUTOCAPTURE_KEYS,
   ALLOWED_OPTION_KEYS,
   DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION,
+  DEFAULT_ERROR_STATUS_THRESHOLD,
   DEFAULT_DEAD_CLICK_WINDOW_MS,
   DEFAULT_RAGE_CLICK_THRESHOLD,
   DEFAULT_RAGE_CLICK_WINDOW_MS,
@@ -29,11 +30,19 @@ export interface ResolvedAutoCaptureConfig {
   rageClick: boolean;
   deadClick: boolean;
   repeatedSubmit: boolean;
+  // Breadcrumb sources (Wave-21 A2).
+  errorJs: boolean;
+  errorApi: boolean;
+  apiLatency: boolean;
+  errorResource: boolean;
+  longTask: boolean;
   rageClickThreshold: number;
   rageClickWindowMs: number;
   deadClickWindowMs: number;
   repeatedSubmitThreshold: number;
   repeatedSubmitWindowMs: number;
+  /** HTTP status at or above which a network breadcrumb is an `error.api`. */
+  errorStatusThreshold: number;
   maxEventsPerSession: number;
 }
 
@@ -135,11 +144,17 @@ function resolveAutoCapture(raw: unknown): ResolvedAutoCaptureConfig {
     rageClick: true,
     deadClick: true,
     repeatedSubmit: true,
+    errorJs: true,
+    errorApi: true,
+    apiLatency: true,
+    errorResource: true,
+    longTask: true,
     rageClickThreshold: DEFAULT_RAGE_CLICK_THRESHOLD,
     rageClickWindowMs: DEFAULT_RAGE_CLICK_WINDOW_MS,
     deadClickWindowMs: DEFAULT_DEAD_CLICK_WINDOW_MS,
     repeatedSubmitThreshold: DEFAULT_REPEATED_SUBMIT_THRESHOLD,
     repeatedSubmitWindowMs: DEFAULT_REPEATED_SUBMIT_WINDOW_MS,
+    errorStatusThreshold: DEFAULT_ERROR_STATUS_THRESHOLD,
     maxEventsPerSession: DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION,
   };
 
@@ -175,6 +190,15 @@ function resolveAutoCapture(raw: unknown): ResolvedAutoCaptureConfig {
       defaults.repeatedSubmit,
       'repeatedSubmit',
     ),
+    errorJs: resolveBool(opts.errorJs, defaults.errorJs, 'errorJs'),
+    errorApi: resolveBool(opts.errorApi, defaults.errorApi, 'errorApi'),
+    apiLatency: resolveBool(opts.apiLatency, defaults.apiLatency, 'apiLatency'),
+    errorResource: resolveBool(
+      opts.errorResource,
+      defaults.errorResource,
+      'errorResource',
+    ),
+    longTask: resolveBool(opts.longTask, defaults.longTask, 'longTask'),
     rageClickThreshold: resolvePositiveInt(
       opts.rageClickThreshold,
       defaults.rageClickThreshold,
@@ -199,6 +223,11 @@ function resolveAutoCapture(raw: unknown): ResolvedAutoCaptureConfig {
       opts.repeatedSubmitWindowMs,
       defaults.repeatedSubmitWindowMs,
       'repeatedSubmitWindowMs',
+    ),
+    errorStatusThreshold: resolvePositiveInt(
+      opts.errorStatusThreshold,
+      defaults.errorStatusThreshold,
+      'errorStatusThreshold',
     ),
     maxEventsPerSession: resolvePositiveInt(
       opts.maxEventsPerSession,

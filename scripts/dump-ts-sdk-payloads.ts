@@ -176,9 +176,18 @@ interface BrowserGlobals {
 // dispatchable document, and a fireable MutationObserver. Real `setTimeout`
 // drives the dead-click window.
 
+interface DumperEvent {
+  type: string;
+  target: unknown;
+  error?: unknown;
+  reason?: unknown;
+  message?: string;
+}
+
 interface DumperListener {
   type: string;
-  handler: (ev: { type: string; target: DumperElement | null }) => void;
+  handler: (ev: DumperEvent) => void;
+  capture: boolean;
 }
 
 class DumperElement {
@@ -214,25 +223,44 @@ class DumperElement {
   }
 }
 
-class DumperDocument {
-  body = new DumperElement('BODY');
-  documentElement = new DumperElement('HTML');
+/** A capture-aware event target shared by the document and window stand-ins. */
+class DumperEventTarget {
   private listeners: DumperListener[] = [];
   addEventListener(
     type: string,
     handler: DumperListener['handler'],
+    capture?: boolean,
   ): void {
-    this.listeners.push({ type, handler });
+    this.listeners.push({ type, handler, capture: capture === true });
   }
-  removeEventListener(type: string, handler: DumperListener['handler']): void {
+  removeEventListener(
+    type: string,
+    handler: DumperListener['handler'],
+    capture?: boolean,
+  ): void {
     this.listeners = this.listeners.filter(
-      (l) => !(l.type === type && l.handler === handler),
+      (l) =>
+        !(
+          l.type === type &&
+          l.handler === handler &&
+          l.capture === (capture === true)
+        ),
     );
   }
-  dispatch(type: string, target: DumperElement | null): void {
+  dispatchEvent(ev: DumperEvent, capture = false): void {
     for (const l of [...this.listeners]) {
-      if (l.type === type) l.handler({ type, target });
+      if (l.type === ev.type && l.capture === capture) l.handler(ev);
     }
+  }
+}
+
+class DumperDocument extends DumperEventTarget {
+  body = new DumperElement('BODY');
+  documentElement = new DumperElement('HTML');
+  dispatch(type: string, target: DumperElement | null): void {
+    // Frustration-signal sources listen on the document in capture phase.
+    this.dispatchEvent({ type, target }, true);
+    this.dispatchEvent({ type, target }, false);
   }
 }
 
@@ -249,9 +277,76 @@ class DumperMutationObserver {
   }
 }
 
+/** A controllable PerformanceObserver so the long-task source can be exercised. */
+let dumperLongTaskCb:
+  | ((list: { getEntries(): unknown[] }) => void)
+  | null = null;
+class DumperPerformanceObserver {
+  constructor(cb: (list: { getEntries(): unknown[] }) => void) {
+    dumperLongTaskCb = cb;
+  }
+  observe(): void {
+    /* no-op — entries are fired manually in the scenario */
+  }
+  disconnect(): void {
+    dumperLongTaskCb = null;
+  }
+}
+
+/** A minimal XHR whose prototype the api source patches. */
+class DumperXHR {
+  status = 0;
+  private listeners = new Map<string, Array<() => void>>();
+  open(_method: string, _url: string): void {
+    /* original no-op */
+  }
+  send(_body?: unknown): void {
+    /* original no-op */
+  }
+  addEventListener(type: string, cb: () => void): void {
+    const arr = this.listeners.get(type) ?? [];
+    arr.push(cb);
+    this.listeners.set(type, arr);
+  }
+  fire(type: string): void {
+    for (const cb of this.listeners.get(type) ?? []) cb();
+  }
+  simulate(method: string, url: string, status: number): void {
+    this.open(method, url);
+    this.send();
+    this.status = status;
+    this.fire('loadend');
+  }
+}
+
+/** The window stand-in: an event target carrying the wrappable globals. */
+class DumperWindow extends DumperEventTarget {
+  location: { href: string };
+  MutationObserver = DumperMutationObserver;
+  PerformanceObserver = DumperPerformanceObserver;
+  XMLHttpRequest = DumperXHR;
+  /**
+   * The api source wraps `window.fetch` at install time (client construction).
+   * To let a scenario decide the outcome AFTER the wrapper is in place, the
+   * installed `fetch` is a STABLE delegate that forwards to a swappable inner
+   * impl (`fetchImpl`). Scenarios set `fetchImpl`, not `fetch`, so the wrapper
+   * is never clobbered.
+   */
+  fetch: typeof fetch;
+  fetchImpl: typeof fetch;
+  constructor(href: string, fetchImpl: typeof fetch) {
+    super();
+    this.location = { href };
+    this.fetchImpl = fetchImpl;
+    // Stable delegate captured by the api source at install time.
+    this.fetch = ((input: unknown, init?: unknown) =>
+      this.fetchImpl(input as never, init as never)) as unknown as typeof fetch;
+  }
+}
+
 interface BrowserHandles {
   document: DumperDocument;
-  window: { location: { href: string } };
+  window: DumperWindow;
 }
 
 /**
@@ -269,10 +364,13 @@ function installBrowserGlobals(g: BrowserGlobals): {
 } {
   const store = new Map<string, string>();
   const doc = new DumperDocument();
-  const win = {
-    location: { href: g.href },
-    MutationObserver: DumperMutationObserver,
-  };
+  // A default `window.fetch` that 404s — scenarios that need a specific outcome
+  // override `win.fetch` before driving. (This is NOT the SDK transport; the SDK
+  // posts through its injected recording transport, so the api source never
+  // instruments the SDK's own outbound batches.)
+  const defaultFetch = (async () =>
+    ({ status: 404 }) as Response) as unknown as typeof fetch;
+  const win = new DumperWindow(g.href, defaultFetch);
   const values: Record<string, unknown> = {
     window: win,
     document: doc,
@@ -281,6 +379,7 @@ function installBrowserGlobals(g: BrowserGlobals): {
     innerWidth: g.innerWidth,
     innerHeight: g.innerHeight,
     MutationObserver: DumperMutationObserver,
+    PerformanceObserver: DumperPerformanceObserver,
     sessionStorage: {
       getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
       setItem: (k: string, v: string) => {
@@ -508,6 +607,116 @@ async function main(): Promise<void> {
           handles.document.dispatch('click', btn);
           // Wait out the dead-click window (default 2500ms) with no effect.
           await new Promise((r) => setTimeout(r, 2700));
+        },
+      ),
+    ),
+  );
+
+  // Scenario 10: autocapture-error-js
+  //   - An uncaught error dispatched on `window` becomes one `error.js` event
+  //     (severity error) with message + errorType + scrubbed stack.
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario('autocapture-error-js', async (client, handles) => {
+        client.capture({ type: 'view.start' });
+        const err = new TypeError('cannot read property of undefined');
+        err.stack = 'TypeError: cannot read property of undefined\n  at app (a.js:1)';
+        handles.window.dispatchEvent(
+          { type: 'error', target: handles.window, error: err, message: err.message },
+          false,
+        );
+      }),
+    ),
+  );
+
+  // Scenario 11: autocapture-api-latency (fetch success)
+  //   - A successful `window.fetch` (status 200) emits one `perf.api_latency`
+  //     with durationMs + httpStatus and a scrubbed URL (query value redacted).
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario(
+        'autocapture-api-latency',
+        async (client, handles) => {
+          client.capture({ type: 'view.start' });
+          handles.window.fetchImpl = (async () =>
+            ({ status: 200 }) as Response) as unknown as typeof fetch;
+          await (handles.window.fetch as typeof fetch)(
+            'https://api.example.com/v1/items?token=secret',
+          );
+        },
+      ),
+    ),
+  );
+
+  // Scenario 12: autocapture-error-api (fetch failure, status >= 400)
+  //   - A `window.fetch` returning 503 emits one `error.api` (severity error)
+  //     with httpStatus.
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario(
+        'autocapture-error-api',
+        async (client, handles) => {
+          client.capture({ type: 'view.start' });
+          handles.window.fetchImpl = (async () =>
+            ({ status: 503 }) as Response) as unknown as typeof fetch;
+          await (handles.window.fetch as typeof fetch)(
+            'https://api.example.com/v1/checkout',
+            { method: 'POST' },
+          );
+        },
+      ),
+    ),
+  );
+
+  // Scenario 12b: autocapture-api-latency-xhr (XHR success)
+  //   - An XHR completing with status 200 emits one `perf.api_latency`. Drives
+  //     the XHR-wrap path (distinct from fetch).
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario(
+        'autocapture-api-latency-xhr',
+        async (client, handles) => {
+          client.capture({ type: 'view.start' });
+          const xhr = new handles.window.XMLHttpRequest();
+          xhr.simulate('GET', 'https://api.example.com/v1/profile?uid=42', 200);
+        },
+      ),
+    ),
+  );
+
+  // Scenario 13: autocapture-error-resource
+  //   - A capture-phase resource error on an <img> emits one `error.resource`
+  //     (severity warn) with a masked descriptor + scrubbed resource URL.
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario(
+        'autocapture-error-resource',
+        async (client, handles) => {
+          client.capture({ type: 'view.start' });
+          const img = el(handles, 'img', {
+            id: 'hero',
+            src: 'https://cdn.example.com/a.png?sig=secret',
+          });
+          handles.window.dispatchEvent({ type: 'error', target: img }, true);
+        },
+      ),
+    ),
+  );
+
+  // Scenario 14: autocapture-long-task
+  //   - A reported long-task entry emits one `perf.long_task` with durationMs.
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario(
+        'autocapture-long-task',
+        async (client, handles) => {
+          client.capture({ type: 'view.start' });
+          // Fire a synthetic longtask entry through the observer the source
+          // registered during install.
+          dumperLongTaskCb?.({
+            getEntries: () => [{ duration: 120, name: 'self', entryType: 'longtask' }],
+          });
+          void handles;
         },
       ),
     ),

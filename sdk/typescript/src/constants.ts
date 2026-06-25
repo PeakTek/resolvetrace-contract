@@ -102,6 +102,8 @@ export const DEFAULT_RAGE_CLICK_WINDOW_MS = 1_000;
 export const DEFAULT_DEAD_CLICK_WINDOW_MS = 2_500;
 export const DEFAULT_REPEATED_SUBMIT_THRESHOLD = 2;
 export const DEFAULT_REPEATED_SUBMIT_WINDOW_MS = 3_000;
+/** HTTP status at/above which a network breadcrumb is classified `error.api`. */
+export const DEFAULT_ERROR_STATUS_THRESHOLD = 400;
 /** Per-session ceiling on auto-captured events (anti-flood). */
 export const DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION = 200;
 
@@ -128,10 +130,16 @@ export const ALLOWED_AUTOCAPTURE_KEYS: ReadonlySet<string> = new Set([
   'rageClick',
   'deadClick',
   'repeatedSubmit',
+  'errorJs',
+  'errorApi',
+  'apiLatency',
+  'errorResource',
+  'longTask',
   'rageClickThreshold',
   'rageClickWindowMs',
   'deadClickWindowMs',
   'repeatedSubmitThreshold',
   'repeatedSubmitWindowMs',
+  'errorStatusThreshold',
   'maxEventsPerSession',
 ]);

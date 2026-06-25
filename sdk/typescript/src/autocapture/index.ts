@@ -19,7 +19,11 @@
 import type { ResolvedConfig } from '../config.js';
 import { isBrowser } from '../runtime.js';
 import type { EventInput } from '../types.js';
+import { createApiSource } from './api.js';
 import { createDeadClickSource } from './dead-click.js';
+import { createErrorJsSource } from './error-js.js';
+import { createErrorResourceSource } from './error-resource.js';
+import { createLongTaskSource } from './long-task.js';
 import { createRageClickSource } from './rage-click.js';
 import { createRepeatedSubmitSource } from './repeated-submit.js';
 import type { CaptureContext, CaptureSource, Teardown } from './types.js';
@@ -33,12 +37,18 @@ export {
   MASKED_TOKEN,
 } from './selector.js';
 
-/** The capture sources installed by default. A2 appends its sources here. */
+/** The capture sources installed by default. */
 export function defaultSources(): CaptureSource[] {
   return [
+    // Frustration signals (A1).
     createRageClickSource(),
     createDeadClickSource(),
     createRepeatedSubmitSource(),
+    // Error / network / perf breadcrumbs (A2).
+    createErrorJsSource(),
+    createApiSource(),
+    createErrorResourceSource(),
+    createLongTaskSource(),
   ];
 }
 

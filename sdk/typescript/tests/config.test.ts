@@ -98,11 +98,17 @@ describe('resolveConfig', () => {
         rageClick: true,
         deadClick: true,
         repeatedSubmit: true,
+        errorJs: true,
+        errorApi: true,
+        apiLatency: true,
+        errorResource: true,
+        longTask: true,
         rageClickThreshold: 3,
         rageClickWindowMs: 1000,
         deadClickWindowMs: 2500,
         repeatedSubmitThreshold: 2,
         repeatedSubmitWindowMs: 3000,
+        errorStatusThreshold: 400,
         maxEventsPerSession: 200,
       });
     });

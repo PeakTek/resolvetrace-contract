@@ -256,6 +256,21 @@ export interface AutoCaptureOptions {
   /** Capture `ux.repeated_submit`. Default `true`. */
   repeatedSubmit?: boolean;
 
+  // --- Error / network / perf breadcrumbs (Wave-21 A2) ---------------------
+  /** Capture `error.js` (uncaught errors + unhandled rejections). Default `true`. */
+  errorJs?: boolean;
+  /**
+   * Capture `error.api` (failed fetch/XHR — network error or status >=
+   * `errorStatusThreshold`). Default `true`.
+   */
+  errorApi?: boolean;
+  /** Capture `perf.api_latency` (successful fetch/XHR timing). Default `true`. */
+  apiLatency?: boolean;
+  /** Capture `error.resource` (img/script/link load failures). Default `true`. */
+  errorResource?: boolean;
+  /** Capture `perf.long_task` (Long Tasks API entries >50ms). Default `true`. */
+  longTask?: boolean;
+
   // --- Heuristic tunables ---------------------------------------------------
   /** Clicks on the same masked target to trigger a rage burst. Default `3`. */
   rageClickThreshold?: number;
@@ -270,6 +285,11 @@ export interface AutoCaptureOptions {
   repeatedSubmitThreshold?: number;
   /** Window (ms) within which repeated submits must occur. Default `3000`. */
   repeatedSubmitWindowMs?: number;
+  /**
+   * HTTP status code at or above which a network breadcrumb is classified as an
+   * `error.api` rather than a `perf.api_latency`. Default `400`.
+   */
+  errorStatusThreshold?: number;
 
   // --- Bounding -------------------------------------------------------------
   /**
