@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "eventId": "KCRZQH7555W400000000000000",
+  "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5MP",
+  "type": "action.click",
+  "capturedAt": "2026-04-20T12:35:03.000Z",
+  "context": {
+    "releaseVersion": "web@2026.06.1",
+    "locale": "en-CA",
+    "market": "ca-retail",
+    "diagnosticsLevel": "standard",
+    "routeName": "checkout",
+    "browserFamily": "Chrome",
+    "browserVersion": "126.0.0",
+    "osFamily": "macOS",
+    "deviceType": "desktop",
+    "viewportWidth": 1440,
+    "viewportHeight": 900,
+    "componentId": "cart.checkout-btn",
+    "componentType": "button"
+  },
+  "scrubber": {
+    "version": "sdk@0.1.0",
+    "rulesDigest": "sha256:bd7872828dbfd9970006fbea22c24a137b27c48fb1d6dd635a88d4d09c0b28ec",
+    "applied": [
+      "regex:email"
+    ],
+    "budgetExceeded": false,
+    "durationMs": 1.2
+  },
+  "sdk": {
+    "name": "@peaktek/resolvetrace-sdk",
+    "version": "0.1.0",
+    "runtime": "browser"
+  },
+  "attributes": {
+    "selector": "button.checkout-submit",
+    "text": "[REDACTED]"
+  }
+}
