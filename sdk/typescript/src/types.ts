@@ -24,6 +24,62 @@ export type AttributeValue =
 /** Free-form attribute bag supplied by the caller. */
 export type EventAttributes = Record<string, unknown>;
 
+/**
+ * Canonical event vocabulary — the 14 reserved event-type names with a stable,
+ * cross-producer shape. Wave 21+ capture features emit against these. Mirrors
+ * `KnownEventType` in `schemas/events.json`.
+ */
+export type KnownEventType =
+  | 'view.start'
+  | 'view.end'
+  | 'action.click'
+  | 'action.submit'
+  | 'action.navigation'
+  | 'error.js'
+  | 'error.api'
+  | 'error.resource'
+  | 'perf.api_latency'
+  | 'perf.long_task'
+  | 'ux.dead_click'
+  | 'ux.rage_click'
+  | 'ux.repeated_submit'
+  | 'support.report_submitted';
+
+/** Diagnostics collection level (mirrors the wire `diagnosticsLevel`). */
+export type DiagnosticsLevel = 'essential' | 'standard' | 'assisted_support';
+
+/** Event severity classification (mirrors the wire `severity`). */
+export type Severity = 'info' | 'warn' | 'error';
+
+/**
+ * Shared per-event global context. Optional on the envelope; when supplied,
+ * `releaseVersion`/`locale`/`market`/`diagnosticsLevel` are required. camelCase
+ * wire form; mirrors `EventContext` in `schemas/events.json`.
+ */
+export interface EventContext {
+  releaseVersion: string;
+  locale: string;
+  market: string;
+  diagnosticsLevel: DiagnosticsLevel;
+  routeName?: string;
+  routeType?: string;
+  componentId?: string;
+  componentType?: string;
+  browserFamily?: string;
+  browserVersion?: string;
+  osFamily?: string;
+  deviceType?: string;
+  viewportWidth?: number;
+  viewportHeight?: number;
+  featureFlags?: Record<string, unknown>;
+  experimentVariant?: string;
+  networkState?: string;
+  /** Raw page URL (browser producers). Not part of the abstract vocabulary. */
+  pageUrl?: string;
+  /** Support code (shape only; generation handled in a later wave). */
+  supportCode?: string;
+}
+
 /** Per-event report stamped by the SDK-side scrubber. */
 export interface ScrubberReport {
   /** SDK scrubber version string (e.g. "sdk@0.1.0"). */
@@ -58,6 +114,8 @@ export interface ActorIdentity {
 
 /** Full on-wire envelope for a single event. */
 export interface EventEnvelope {
+  /** Major of the shared event schema. The SDK stamps the current major (1). */
+  schemaVersion: number;
   eventId: Ulid;
   /**
    * Session correlation ULID. Always present on envelopes built by the
@@ -67,6 +125,14 @@ export interface EventEnvelope {
   sessionId?: Ulid;
   type: string;
   capturedAt: IsoDateTime;
+  /** Shared per-event global context (release/locale/market/diagnostics + more). */
+  context?: EventContext;
+  /** Severity classification (info | warn | error). */
+  severity?: Severity;
+  /** Duration in milliseconds, for events that measure one. */
+  durationMs?: number;
+  /** HTTP status code, for API-oriented events. */
+  httpStatus?: number;
   attributes?: EventAttributes;
   scrubber: ScrubberReport;
   clockSkewDetected?: boolean;
@@ -89,12 +155,24 @@ export interface EventBatchAcceptedResponse {
 
 /** User-facing input shape for `client.capture()`. */
 export interface EventInput {
-  /** Dot- or slash-separated event type identifier. */
-  type: string;
+  /**
+   * Event type identifier. A canonical `KnownEventType` is preferred for
+   * interaction/error/perf/ux/support events; custom names remain accepted
+   * outside the reserved canonical namespaces.
+   */
+  type: KnownEventType | (string & {});
   /** Optional session correlation ULID. */
   sessionId?: Ulid;
   /** Capture time override (defaults to now). */
   capturedAt?: Date | IsoDateTime;
+  /** Shared per-event global context. */
+  context?: EventContext;
+  /** Severity classification. */
+  severity?: Severity;
+  /** Duration in milliseconds. */
+  durationMs?: number;
+  /** HTTP status code. */
+  httpStatus?: number;
   /** Arbitrary attribute bag. */
   attributes?: EventAttributes;
 }

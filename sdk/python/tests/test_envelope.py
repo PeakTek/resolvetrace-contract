@@ -172,4 +172,11 @@ def test_schema_event_envelope_required_fields(schema: dict) -> None:
     """Quick sanity check that our schema file has the expected structure."""
     definitions = schema["definitions"]
     required = set(definitions["EventEnvelope"]["required"])
-    assert required == {"eventId", "type", "capturedAt", "scrubber", "sdk"}
+    assert required == {
+        "schemaVersion",
+        "eventId",
+        "type",
+        "capturedAt",
+        "scrubber",
+        "sdk",
+    }

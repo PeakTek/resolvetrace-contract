@@ -1,6 +1,7 @@
 {
   "events": [
     {
+      "schemaVersion": 1,
       "type": "page_view",
       "capturedAt": "2026-04-20T12:34:56.789Z",
       "scrubber": {

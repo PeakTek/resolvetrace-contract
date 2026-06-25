@@ -31,14 +31,17 @@ export type {
   AttributeValue,
   ClientOptions,
   Diagnostics,
+  DiagnosticsLevel,
   EventAttributes,
   EventBatchAcceptedResponse,
   EventBatchRequest,
+  EventContext,
   EventEnvelope,
   EventInput,
   FlushOptions,
   FlushResult,
   IsoDateTime,
+  KnownEventType,
   MaskSelector,
   ScrubberReport,
   SdkIdentity,
@@ -47,8 +50,9 @@ export type {
   SessionEndReason,
   SessionStartPayload,
   SessionUnknownErrorBody,
+  Severity,
   ShutdownOptions,
   Ulid,
 } from './types.js';
 export { generateUlid, isUlid } from './ulid.js';
-export { SDK_NAME, SDK_VERSION } from './constants.js';
+export { EVENT_TYPES, SCHEMA_VERSION, SDK_NAME, SDK_VERSION } from './constants.js';

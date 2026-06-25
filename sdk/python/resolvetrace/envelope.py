@@ -22,8 +22,21 @@ from .models import ScrubberReport
 from .ulid import generate_ulid
 
 
-#: Dot-or-slash event-type pattern from the schema.
-_EVENT_TYPE_PATTERN = re.compile(r"^[a-zA-Z0-9_.\-:/]+$")
+#: Dot-or-slash event-type pattern from the schema. Open vocabulary with a
+#: reserved canonical core: a value is valid iff it is one of the 14 canonical
+#: literals OR a name that does not begin with a reserved canonical namespace
+#: prefix (view. action. error. perf. ux. support.).
+_EVENT_TYPE_PATTERN = re.compile(
+    r"^(?:(?:view\.start|view\.end|action\.click|action\.submit"
+    r"|action\.navigation|error\.js|error\.api|error\.resource"
+    r"|perf\.api_latency|perf\.long_task|ux\.dead_click|ux\.rage_click"
+    r"|ux\.repeated_submit|support\.report_submitted)"
+    r"|(?!(?:view|action|error|perf|ux|support)\.)[a-zA-Z0-9_.\-:/]+)$"
+)
+
+#: Current major of the shared event schema. Producers stamp this on every
+#: envelope (``schemaVersion``). Mirrors the TS SDK's ``SCHEMA_VERSION``.
+SCHEMA_VERSION = 1
 
 #: Max single-event payload after scrubbing. Tracked at transport-queue time.
 MAX_SINGLE_EVENT_BYTES = 256 * 1024
@@ -45,6 +58,12 @@ class EventInput(TypedDict, total=False):
     attributes: dict[str, Any]
     capturedAt: str
     captured_at: str
+    context: dict[str, Any]
+    severity: str
+    durationMs: int
+    duration_ms: int
+    httpStatus: int
+    http_status: int
 
 
 @dataclass
@@ -60,7 +79,12 @@ class EventEnvelope:
     captured_at: str
     scrubber: ScrubberReport
     sdk: dict[str, str]
+    schema_version: int = SCHEMA_VERSION
     session_id: str | None = None
+    context: dict[str, Any] | None = None
+    severity: str | None = None
+    duration_ms: int | None = None
+    http_status: int | None = None
     attributes: dict[str, Any] | None = None
     actor: dict[str, Any] | None = None
     payload: dict[str, Any] = field(default_factory=dict)
@@ -103,6 +127,10 @@ def build_envelope(
     captured_at = event.get("capturedAt") or event.get("captured_at") or _iso_now(now)
     attributes = event.get("attributes")
     actor = event.get("actor")
+    context = event.get("context")
+    severity = event.get("severity")
+    duration_ms = event.get("durationMs") or event.get("duration_ms")
+    http_status = event.get("httpStatus") or event.get("http_status")
 
     envelope = EventEnvelope(
         event_id=generate_ulid(now=now),
@@ -110,7 +138,12 @@ def build_envelope(
         captured_at=captured_at,
         scrubber=scrubber,
         sdk={"name": sdk_name, "version": sdk_version, "runtime": sdk_runtime},
+        schema_version=SCHEMA_VERSION,
         session_id=session_id,
+        context=context if isinstance(context, dict) else None,
+        severity=severity if isinstance(severity, str) else None,
+        duration_ms=duration_ms if isinstance(duration_ms, int) else None,
+        http_status=http_status if isinstance(http_status, int) else None,
         attributes=attributes if isinstance(attributes, dict) else None,
         actor=actor if isinstance(actor, dict) else None,
     )
@@ -130,6 +163,7 @@ def _iso_now(now: datetime | None) -> str:
 def _to_wire(envelope: EventEnvelope) -> dict[str, Any]:
     scrubber = envelope.scrubber.model_dump(by_alias=True, exclude_none=True)
     wire: dict[str, Any] = {
+        "schemaVersion": envelope.schema_version,
         "eventId": envelope.event_id,
         "type": envelope.type,
         "capturedAt": envelope.captured_at,
@@ -138,6 +172,14 @@ def _to_wire(envelope: EventEnvelope) -> dict[str, Any]:
     }
     if envelope.session_id is not None:
         wire["sessionId"] = envelope.session_id
+    if envelope.context is not None:
+        wire["context"] = envelope.context
+    if envelope.severity is not None:
+        wire["severity"] = envelope.severity
+    if envelope.duration_ms is not None:
+        wire["durationMs"] = envelope.duration_ms
+    if envelope.http_status is not None:
+        wire["httpStatus"] = envelope.http_status
     if envelope.attributes is not None:
         wire["attributes"] = envelope.attributes
     if envelope.actor is not None:

@@ -38,6 +38,13 @@ export const MODULE_META = {
  */
 export const ULID_PATTERN = '^[0-9A-HJKMNP-TV-Z]{26}$';
 
+/**
+ * Current major version of the shared event schema. Producers stamp this on
+ * every envelope (`schemaVersion`); consumers reject unsupported majors.
+ * Additive changes stay within a major; a breaking change increments it.
+ */
+export const SCHEMA_VERSION = 1;
+
 /* -------------------------------------------------------------------------- */
 /* Primitive field schemas                                                    */
 /* -------------------------------------------------------------------------- */
@@ -110,17 +117,119 @@ export type ScrubberReport = Static<typeof ScrubberReport>;
 /* -------------------------------------------------------------------------- */
 
 /**
- * Event `type` is an open string (not a closed enum) so customers can emit
- * product-specific event names via `track()`. A small set of reserved names
- * is documented, but any non-empty string matching the pattern is accepted.
+ * Canonical event vocabulary. These 14 names have a defined semantic meaning
+ * and a stable shape across producers and consumers; capture features emit
+ * against them so analytics, frustration signals, and support codes line up.
+ *
+ * The leading namespaces (`view.`, `action.`, `error.`, `perf.`, `ux.`,
+ * `support.`) are RESERVED — a name in one of these namespaces that is not one
+ * of these literals is rejected (see `CustomEventType`), so a product event
+ * cannot shadow a canonical type with a divergent shape.
+ */
+export const KNOWN_EVENT_TYPES = [
+  'view.start',
+  'view.end',
+  'action.click',
+  'action.submit',
+  'action.navigation',
+  'error.js',
+  'error.api',
+  'error.resource',
+  'perf.api_latency',
+  'perf.long_task',
+  'ux.dead_click',
+  'ux.rage_click',
+  'ux.repeated_submit',
+  'support.report_submitted',
+] as const;
+
+/**
+ * Reserved canonical namespaces. A custom (non-canonical) event name beginning
+ * with any of these prefixes is rejected by `CustomEventType` so the canonical
+ * vocabulary cannot be shadowed.
+ */
+export const RESERVED_EVENT_NAMESPACES = [
+  'view.',
+  'action.',
+  'error.',
+  'perf.',
+  'ux.',
+  'support.',
+] as const;
+
+/**
+ * Union of the 14 canonical event-type literals. Producers SHOULD emit one of
+ * these names for any interaction, error, performance, UX-signal, or support
+ * event so downstream consumers can rely on a stable shape.
+ */
+export const KnownEventType = Type.Union(
+  KNOWN_EVENT_TYPES.map((name) => Type.Literal(name)),
+  {
+    description:
+      'Canonical event type. One of the 14 reserved names with defined semantics across producers and consumers.',
+  },
+);
+export type KnownEventType = Static<typeof KnownEventType>;
+
+/**
+ * Customer-defined ("custom") event name. Retains the historical open pattern
+ * — any non-empty dot/slash-separated identifier — EXCEPT names in a reserved
+ * canonical namespace (`view. action. error. perf. ux. support.`), which are
+ * excluded via a leading negative lookahead so customers cannot register a
+ * divergent shape under a canonical prefix.
+ *
+ * Exported as its own definition for consumers that want to reason about the
+ * custom-vs-canonical split directly; the on-wire `EventType` accepts the
+ * canonical literals OR this custom form (see `EVENT_TYPE_PATTERN`).
+ */
+export const CustomEventType = Type.String({
+  minLength: 1,
+  maxLength: 128,
+  pattern:
+    '^(?!(?:view|action|error|perf|ux|support)\\.)[a-zA-Z0-9_.\\-:/]+$',
+  description:
+    'Customer-defined event type. Same open form as before, but the canonical namespaces (view. action. error. perf. ux. support.) are reserved and rejected here.',
+});
+export type CustomEventType = Static<typeof CustomEventType>;
+
+/**
+ * Single regex encoding the open-vocabulary-with-reserved-core rule, so the
+ * on-wire `type` stays a plain `string` (additive: only a `pattern` is added
+ * to the pre-existing string field — not a type/shape change). A value matches
+ * iff it is one of the 14 canonical literals OR a name that does not begin with
+ * a reserved canonical namespace prefix.
+ *
+ *   ^(?: <canonical-literal-alternation>
+ *        | (?!(?:view|action|error|perf|ux|support)\.) [allowed-chars]+
+ *      )$
+ */
+const ESCAPED_KNOWN = KNOWN_EVENT_TYPES.map((n) =>
+  n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+).join('|');
+export const EVENT_TYPE_PATTERN =
+  `^(?:(?:${ESCAPED_KNOWN})` +
+  `|(?!(?:view|action|error|perf|ux|support)\\.)[a-zA-Z0-9_.\\-:/]+)$`;
+
+/**
+ * Event `type` — an open vocabulary with a reserved canonical core. A value is
+ * valid if it is one of the 14 canonical names (`KnownEventType`) OR a custom
+ * name outside the reserved namespaces (`CustomEventType`). Everything that
+ * validated before this taxonomy landed still validates; only NEW custom names
+ * that try to shadow a canonical namespace are now rejected.
+ *
+ * Kept as a `string` (not a union) on the wire so the change is purely additive
+ * over the prior open-string `type` — the canonical core is enforced through
+ * the pattern. `KnownEventType` is exported separately for type-safe producers.
  */
 export const EventType = Type.String({
   minLength: 1,
   maxLength: 128,
-  pattern: '^[a-zA-Z0-9_.\\-:/]+$',
+  pattern: EVENT_TYPE_PATTERN,
+  title: 'EventType',
   description:
-    'Dot- or slash-separated event type identifier (e.g. "page_view", "dom.click", "app.checkout.completed").',
+    'Dot- or slash-separated event type identifier. Open vocabulary with a reserved canonical core (e.g. "view.start", "action.click", or a custom "app.checkout.completed").',
 });
+export type EventType = Static<typeof EventType>;
 
 /**
  * Free-form attribute bag. Values are JSON scalars, arrays of scalars, or
@@ -197,11 +306,156 @@ export const Actor = Type.Object(
 export type Actor = Static<typeof Actor>;
 
 /* -------------------------------------------------------------------------- */
+/* Global context                                                             */
+/* -------------------------------------------------------------------------- */
+
+/** Diagnostics collection level negotiated for the session / environment. */
+export const DiagnosticsLevel = Type.Union(
+  [
+    Type.Literal('essential'),
+    Type.Literal('standard'),
+    Type.Literal('assisted_support'),
+  ],
+  {
+    description:
+      'Diagnostics collection level: essential | standard | assisted_support.',
+  },
+);
+export type DiagnosticsLevel = Static<typeof DiagnosticsLevel>;
+
+/**
+ * Shared per-event global context (doc: canonical `global_context`). Carries
+ * the release/locale/market/diagnostics fields every canonical event should
+ * be attributable to, plus optional route/component/browser/device/network
+ * descriptors. Optional on the envelope for backward compatibility; when
+ * present, the four core fields are required so a populated context is always
+ * attributable. camelCase wire form.
+ *
+ * `supportCode` is shape-only here (so `support.report_submitted` / `view.start`
+ * can carry it); generation and lookup of support codes live in a later wave.
+ */
+export const EventContext = Type.Object(
+  {
+    releaseVersion: Type.String({
+      minLength: 1,
+      maxLength: 256,
+      description: 'Producer release / build version (e.g. "web@2026.06.1").',
+    }),
+    locale: Type.String({
+      minLength: 1,
+      maxLength: 64,
+      description: 'BCP-47 locale of the session (e.g. "en-CA").',
+    }),
+    market: Type.String({
+      minLength: 1,
+      maxLength: 64,
+      description: 'Business market / region the session belongs to.',
+    }),
+    diagnosticsLevel: DiagnosticsLevel,
+    routeName: Type.Optional(
+      Type.String({
+        maxLength: 256,
+        description: 'Logical route / screen name (not the raw URL).',
+      }),
+    ),
+    routeType: Type.Optional(
+      Type.String({
+        maxLength: 64,
+        description: 'Route classification (e.g. "page", "modal", "tab").',
+      }),
+    ),
+    componentId: Type.Optional(
+      Type.String({ maxLength: 256, description: 'Stable component identifier.' }),
+    ),
+    componentType: Type.Optional(
+      Type.String({ maxLength: 128, description: 'Component classification.' }),
+    ),
+    browserFamily: Type.Optional(
+      Type.String({ maxLength: 64, description: 'Browser family (e.g. "Chrome").' }),
+    ),
+    browserVersion: Type.Optional(
+      Type.String({ maxLength: 64, description: 'Browser version string.' }),
+    ),
+    osFamily: Type.Optional(
+      Type.String({ maxLength: 64, description: 'OS family (e.g. "macOS").' }),
+    ),
+    deviceType: Type.Optional(
+      Type.String({
+        maxLength: 64,
+        description: 'Device classification (e.g. "desktop", "mobile").',
+      }),
+    ),
+    viewportWidth: Type.Optional(
+      Type.Integer({ minimum: 0, description: 'Viewport width in CSS pixels.' }),
+    ),
+    viewportHeight: Type.Optional(
+      Type.Integer({ minimum: 0, description: 'Viewport height in CSS pixels.' }),
+    ),
+    featureFlags: Type.Optional(
+      Type.Record(
+        Type.String({ minLength: 1, maxLength: 128 }),
+        Type.Unknown(),
+        { description: 'Active feature-flag map at capture time.' },
+      ),
+    ),
+    experimentVariant: Type.Optional(
+      Type.String({
+        maxLength: 128,
+        description: 'Active experiment variant identifier.',
+      }),
+    ),
+    networkState: Type.Optional(
+      Type.String({
+        maxLength: 64,
+        description: 'Coarse network state (e.g. "online", "4g", "offline").',
+      }),
+    ),
+    pageUrl: Type.Optional(
+      Type.String({
+        maxLength: 2048,
+        description:
+          'Current page URL. Not part of the abstract global_context vocabulary (which uses routeName/routeType); carried here as an explicit optional field for browser producers that capture the raw URL.',
+      }),
+    ),
+    supportCode: Type.Optional(
+      Type.String({
+        maxLength: 64,
+        description:
+          'Support code correlating user-visible reports to a session. Shape only — generation/lookup is handled in a later wave.',
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    title: 'EventContext',
+    description:
+      'Shared per-event global context. Optional on the envelope; when present, releaseVersion/locale/market/diagnosticsLevel are required.',
+  },
+);
+export type EventContext = Static<typeof EventContext>;
+
+/* -------------------------------------------------------------------------- */
+/* Common optional event fields                                              */
+/* -------------------------------------------------------------------------- */
+
+/** Severity classification for an event. */
+export const Severity = Type.Union(
+  [Type.Literal('info'), Type.Literal('warn'), Type.Literal('error')],
+  { description: 'Event severity: info | warn | error.' },
+);
+export type Severity = Static<typeof Severity>;
+
+/* -------------------------------------------------------------------------- */
 /* Event envelope                                                             */
 /* -------------------------------------------------------------------------- */
 
 export const EventEnvelope = Type.Object(
   {
+    schemaVersion: Type.Integer({
+      minimum: 1,
+      description:
+        'Major version of the shared event schema this envelope conforms to. Producers stamp the current major (currently 1); consumers reject unsupported majors.',
+    }),
     eventId: Ulid,
     sessionId: Type.Optional(
       Type.String({
@@ -215,8 +469,24 @@ export const EventEnvelope = Type.Object(
     capturedAt: Type.String({
       format: 'date-time',
       description:
-        'Client wall-clock at capture time. The server preserves this and also records its own receive time.',
+        'Client wall-clock at capture time (the canonical `occurred_at`). The server preserves this and also records its own receive time.',
     }),
+    context: Type.Optional(EventContext),
+    severity: Type.Optional(Severity),
+    durationMs: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+        description:
+          'Duration in milliseconds for events that measure one (e.g. perf.api_latency, perf.long_task).',
+      }),
+    ),
+    httpStatus: Type.Optional(
+      Type.Integer({
+        minimum: 100,
+        maximum: 599,
+        description: 'HTTP status code for API-oriented events (e.g. error.api).',
+      }),
+    ),
     attributes: Type.Optional(EventAttributes),
     scrubber: ScrubberReport,
     clockSkewDetected: Type.Optional(

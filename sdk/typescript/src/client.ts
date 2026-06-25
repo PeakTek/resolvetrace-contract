@@ -18,6 +18,7 @@ import type {
   ClientOptions,
   Diagnostics,
   EventAttributes,
+  EventContext,
   EventInput,
   FlushOptions,
   FlushResult,
@@ -30,41 +31,63 @@ import type {
 const PAGE_CONTEXT_EVENT_TYPES = new Set<string>(['page_view', 'view.start']);
 
 /**
- * In a browser runtime, enrich page-oriented events with a `context` block
- * carrying the current page URL and viewport. This is where per-page context
- * belongs — it was previously (incorrectly) attached to the session-start
- * body, which the `SessionStartRequest` contract rejects.
+ * In a browser runtime, enrich page-oriented events with page URL + viewport.
  *
- * Field names are camelCase and chosen to be forward-compatible with the
- * planned structured event `context` block (`pageUrl`, `viewportWidth`,
- * `viewportHeight`, `routeName`). The enricher never overwrites a key the
- * caller already supplied under `context`, so an app that passes its own
- * `context` (e.g. with `routeName`) stays authoritative.
+ * The structured event `context` block (see `EventContext` in the contract)
+ * is the home for this data. But the contract requires the four core context
+ * fields (`releaseVersion`, `locale`, `market`, `diagnosticsLevel`) whenever a
+ * `context` object is present, and those cannot be derived from browser globals
+ * alone. So the enricher behaves as follows:
+ *
+ *   - If the caller already supplied a top-level `context` (carrying the four
+ *     required fields), the auto-captured `pageUrl` / `viewportWidth` /
+ *     `viewportHeight` are merged INTO that top-level `context`, never
+ *     overwriting any key the caller set. The result is a complete, valid
+ *     `EventContext`.
+ *   - If the caller did NOT supply a `context`, the auto-captured page fields
+ *     ride under `attributes.context` (an unconstrained bag) instead, exactly
+ *     as before. A partial top-level `context` would be rejected by the
+ *     contract, so we never synthesize one.
+ *
+ * `pageUrl` is carried as an explicit optional field on `EventContext` (it is
+ * not part of the abstract global-context vocabulary, which uses route names);
+ * `viewportWidth` / `viewportHeight` are canonical context fields.
  */
 function enrichPageContext(event: EventInput): EventInput {
   if (!isBrowser()) return event;
   if (!PAGE_CONTEXT_EVENT_TYPES.has(event.type)) return event;
 
-  const ctx: Record<string, unknown> = {};
+  const page: Record<string, unknown> = {};
   const loc = (globalThis as { location?: { href?: string } }).location;
   if (typeof loc?.href === 'string') {
-    ctx.pageUrl = loc.href;
+    page.pageUrl = loc.href;
   }
   const win = globalThis as { innerWidth?: number; innerHeight?: number };
   if (typeof win.innerWidth === 'number') {
-    ctx.viewportWidth = win.innerWidth;
+    page.viewportWidth = win.innerWidth;
   }
   if (typeof win.innerHeight === 'number') {
-    ctx.viewportHeight = win.innerHeight;
+    page.viewportHeight = win.innerHeight;
   }
-  if (Object.keys(ctx).length === 0) return event;
+  if (Object.keys(page).length === 0) return event;
 
+  // Caller supplied a structured context → merge page fields into it (auto
+  // fields fill gaps only; caller-set keys win). Yields a complete EventContext.
+  if (event.context && typeof event.context === 'object') {
+    return {
+      ...event,
+      context: { ...page, ...event.context } as EventContext,
+    };
+  }
+
+  // No caller context → keep page fields on the unconstrained attributes bag,
+  // so we never emit a partial (invalid) top-level context.
   const existingAttrs = event.attributes ?? {};
   const existingContext = existingAttrs['context'];
   const mergedContext =
     existingContext && typeof existingContext === 'object'
-      ? { ...ctx, ...(existingContext as Record<string, unknown>) }
-      : ctx;
+      ? { ...page, ...(existingContext as Record<string, unknown>) }
+      : page;
 
   return {
     ...event,

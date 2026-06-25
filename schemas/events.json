@@ -27,6 +27,30 @@
         "userId"
       ]
     },
+    "CustomEventType": {
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?!(?:view|action|error|perf|ux|support)\\.)[a-zA-Z0-9_.\\-:/]+$",
+      "description": "Customer-defined event type. Same open form as before, but the canonical namespaces (view. action. error. perf. ux. support.) are reserved and rejected here.",
+      "type": "string"
+    },
+    "DiagnosticsLevel": {
+      "description": "Diagnostics collection level: essential | standard | assisted_support.",
+      "anyOf": [
+        {
+          "const": "essential",
+          "type": "string"
+        },
+        {
+          "const": "standard",
+          "type": "string"
+        },
+        {
+          "const": "assisted_support",
+          "type": "string"
+        }
+      ]
+    },
     "EventAttributes": {
       "description": "Customer-provided attribute bag. Keys are camelCase strings.",
       "type": "object",
@@ -79,6 +103,11 @@
             "description": "A single event envelope. Enclosed in the `events` array of a batch request body.",
             "type": "object",
             "properties": {
+              "schemaVersion": {
+                "minimum": 1,
+                "description": "Major version of the shared event schema this envelope conforms to. Producers stamp the current major (currently 1); consumers reject unsupported majors.",
+                "type": "integer"
+              },
               "eventId": {
                 "format": "ulid",
                 "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
@@ -94,14 +123,169 @@
               "type": {
                 "minLength": 1,
                 "maxLength": 128,
-                "pattern": "^[a-zA-Z0-9_.\\-:/]+$",
-                "description": "Dot- or slash-separated event type identifier (e.g. \"page_view\", \"dom.click\", \"app.checkout.completed\").",
+                "pattern": "^(?:(?:view\\.start|view\\.end|action\\.click|action\\.submit|action\\.navigation|error\\.js|error\\.api|error\\.resource|perf\\.api_latency|perf\\.long_task|ux\\.dead_click|ux\\.rage_click|ux\\.repeated_submit|support\\.report_submitted)|(?!(?:view|action|error|perf|ux|support)\\.)[a-zA-Z0-9_.\\-:/]+)$",
+                "title": "EventType",
+                "description": "Dot- or slash-separated event type identifier. Open vocabulary with a reserved canonical core (e.g. \"view.start\", \"action.click\", or a custom \"app.checkout.completed\").",
                 "type": "string"
               },
               "capturedAt": {
                 "format": "date-time",
-                "description": "Client wall-clock at capture time. The server preserves this and also records its own receive time.",
+                "description": "Client wall-clock at capture time (the canonical `occurred_at`). The server preserves this and also records its own receive time.",
                 "type": "string"
+              },
+              "context": {
+                "additionalProperties": false,
+                "title": "EventContext",
+                "description": "Shared per-event global context. Optional on the envelope; when present, releaseVersion/locale/market/diagnosticsLevel are required.",
+                "type": "object",
+                "properties": {
+                  "releaseVersion": {
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "description": "Producer release / build version (e.g. \"web@2026.06.1\").",
+                    "type": "string"
+                  },
+                  "locale": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "description": "BCP-47 locale of the session (e.g. \"en-CA\").",
+                    "type": "string"
+                  },
+                  "market": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "description": "Business market / region the session belongs to.",
+                    "type": "string"
+                  },
+                  "diagnosticsLevel": {
+                    "description": "Diagnostics collection level: essential | standard | assisted_support.",
+                    "anyOf": [
+                      {
+                        "const": "essential",
+                        "type": "string"
+                      },
+                      {
+                        "const": "standard",
+                        "type": "string"
+                      },
+                      {
+                        "const": "assisted_support",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "routeName": {
+                    "maxLength": 256,
+                    "description": "Logical route / screen name (not the raw URL).",
+                    "type": "string"
+                  },
+                  "routeType": {
+                    "maxLength": 64,
+                    "description": "Route classification (e.g. \"page\", \"modal\", \"tab\").",
+                    "type": "string"
+                  },
+                  "componentId": {
+                    "maxLength": 256,
+                    "description": "Stable component identifier.",
+                    "type": "string"
+                  },
+                  "componentType": {
+                    "maxLength": 128,
+                    "description": "Component classification.",
+                    "type": "string"
+                  },
+                  "browserFamily": {
+                    "maxLength": 64,
+                    "description": "Browser family (e.g. \"Chrome\").",
+                    "type": "string"
+                  },
+                  "browserVersion": {
+                    "maxLength": 64,
+                    "description": "Browser version string.",
+                    "type": "string"
+                  },
+                  "osFamily": {
+                    "maxLength": 64,
+                    "description": "OS family (e.g. \"macOS\").",
+                    "type": "string"
+                  },
+                  "deviceType": {
+                    "maxLength": 64,
+                    "description": "Device classification (e.g. \"desktop\", \"mobile\").",
+                    "type": "string"
+                  },
+                  "viewportWidth": {
+                    "minimum": 0,
+                    "description": "Viewport width in CSS pixels.",
+                    "type": "integer"
+                  },
+                  "viewportHeight": {
+                    "minimum": 0,
+                    "description": "Viewport height in CSS pixels.",
+                    "type": "integer"
+                  },
+                  "featureFlags": {
+                    "description": "Active feature-flag map at capture time.",
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {}
+                    }
+                  },
+                  "experimentVariant": {
+                    "maxLength": 128,
+                    "description": "Active experiment variant identifier.",
+                    "type": "string"
+                  },
+                  "networkState": {
+                    "maxLength": 64,
+                    "description": "Coarse network state (e.g. \"online\", \"4g\", \"offline\").",
+                    "type": "string"
+                  },
+                  "pageUrl": {
+                    "maxLength": 2048,
+                    "description": "Current page URL. Not part of the abstract global_context vocabulary (which uses routeName/routeType); carried here as an explicit optional field for browser producers that capture the raw URL.",
+                    "type": "string"
+                  },
+                  "supportCode": {
+                    "maxLength": 64,
+                    "description": "Support code correlating user-visible reports to a session. Shape only — generation/lookup is handled in a later wave.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "releaseVersion",
+                  "locale",
+                  "market",
+                  "diagnosticsLevel"
+                ]
+              },
+              "severity": {
+                "description": "Event severity: info | warn | error.",
+                "anyOf": [
+                  {
+                    "const": "info",
+                    "type": "string"
+                  },
+                  {
+                    "const": "warn",
+                    "type": "string"
+                  },
+                  {
+                    "const": "error",
+                    "type": "string"
+                  }
+                ]
+              },
+              "durationMs": {
+                "minimum": 0,
+                "description": "Duration in milliseconds for events that measure one (e.g. perf.api_latency, perf.long_task).",
+                "type": "integer"
+              },
+              "httpStatus": {
+                "minimum": 100,
+                "maximum": 599,
+                "description": "HTTP status code for API-oriented events (e.g. error.api).",
+                "type": "integer"
               },
               "attributes": {
                 "description": "Customer-provided attribute bag. Keys are camelCase strings.",
@@ -211,6 +395,7 @@
               }
             },
             "required": [
+              "schemaVersion",
               "eventId",
               "type",
               "capturedAt",
@@ -224,12 +409,143 @@
         "events"
       ]
     },
+    "EventContext": {
+      "additionalProperties": false,
+      "title": "EventContext",
+      "description": "Shared per-event global context. Optional on the envelope; when present, releaseVersion/locale/market/diagnosticsLevel are required.",
+      "type": "object",
+      "properties": {
+        "releaseVersion": {
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Producer release / build version (e.g. \"web@2026.06.1\").",
+          "type": "string"
+        },
+        "locale": {
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "BCP-47 locale of the session (e.g. \"en-CA\").",
+          "type": "string"
+        },
+        "market": {
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Business market / region the session belongs to.",
+          "type": "string"
+        },
+        "diagnosticsLevel": {
+          "description": "Diagnostics collection level: essential | standard | assisted_support.",
+          "anyOf": [
+            {
+              "const": "essential",
+              "type": "string"
+            },
+            {
+              "const": "standard",
+              "type": "string"
+            },
+            {
+              "const": "assisted_support",
+              "type": "string"
+            }
+          ]
+        },
+        "routeName": {
+          "maxLength": 256,
+          "description": "Logical route / screen name (not the raw URL).",
+          "type": "string"
+        },
+        "routeType": {
+          "maxLength": 64,
+          "description": "Route classification (e.g. \"page\", \"modal\", \"tab\").",
+          "type": "string"
+        },
+        "componentId": {
+          "maxLength": 256,
+          "description": "Stable component identifier.",
+          "type": "string"
+        },
+        "componentType": {
+          "maxLength": 128,
+          "description": "Component classification.",
+          "type": "string"
+        },
+        "browserFamily": {
+          "maxLength": 64,
+          "description": "Browser family (e.g. \"Chrome\").",
+          "type": "string"
+        },
+        "browserVersion": {
+          "maxLength": 64,
+          "description": "Browser version string.",
+          "type": "string"
+        },
+        "osFamily": {
+          "maxLength": 64,
+          "description": "OS family (e.g. \"macOS\").",
+          "type": "string"
+        },
+        "deviceType": {
+          "maxLength": 64,
+          "description": "Device classification (e.g. \"desktop\", \"mobile\").",
+          "type": "string"
+        },
+        "viewportWidth": {
+          "minimum": 0,
+          "description": "Viewport width in CSS pixels.",
+          "type": "integer"
+        },
+        "viewportHeight": {
+          "minimum": 0,
+          "description": "Viewport height in CSS pixels.",
+          "type": "integer"
+        },
+        "featureFlags": {
+          "description": "Active feature-flag map at capture time.",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {}
+          }
+        },
+        "experimentVariant": {
+          "maxLength": 128,
+          "description": "Active experiment variant identifier.",
+          "type": "string"
+        },
+        "networkState": {
+          "maxLength": 64,
+          "description": "Coarse network state (e.g. \"online\", \"4g\", \"offline\").",
+          "type": "string"
+        },
+        "pageUrl": {
+          "maxLength": 2048,
+          "description": "Current page URL. Not part of the abstract global_context vocabulary (which uses routeName/routeType); carried here as an explicit optional field for browser producers that capture the raw URL.",
+          "type": "string"
+        },
+        "supportCode": {
+          "maxLength": 64,
+          "description": "Support code correlating user-visible reports to a session. Shape only — generation/lookup is handled in a later wave.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "releaseVersion",
+        "locale",
+        "market",
+        "diagnosticsLevel"
+      ]
+    },
     "EventEnvelope": {
       "additionalProperties": false,
       "title": "EventEnvelope",
       "description": "A single event envelope. Enclosed in the `events` array of a batch request body.",
       "type": "object",
       "properties": {
+        "schemaVersion": {
+          "minimum": 1,
+          "description": "Major version of the shared event schema this envelope conforms to. Producers stamp the current major (currently 1); consumers reject unsupported majors.",
+          "type": "integer"
+        },
         "eventId": {
           "format": "ulid",
           "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
@@ -245,14 +561,169 @@
         "type": {
           "minLength": 1,
           "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_.\\-:/]+$",
-          "description": "Dot- or slash-separated event type identifier (e.g. \"page_view\", \"dom.click\", \"app.checkout.completed\").",
+          "pattern": "^(?:(?:view\\.start|view\\.end|action\\.click|action\\.submit|action\\.navigation|error\\.js|error\\.api|error\\.resource|perf\\.api_latency|perf\\.long_task|ux\\.dead_click|ux\\.rage_click|ux\\.repeated_submit|support\\.report_submitted)|(?!(?:view|action|error|perf|ux|support)\\.)[a-zA-Z0-9_.\\-:/]+)$",
+          "title": "EventType",
+          "description": "Dot- or slash-separated event type identifier. Open vocabulary with a reserved canonical core (e.g. \"view.start\", \"action.click\", or a custom \"app.checkout.completed\").",
           "type": "string"
         },
         "capturedAt": {
           "format": "date-time",
-          "description": "Client wall-clock at capture time. The server preserves this and also records its own receive time.",
+          "description": "Client wall-clock at capture time (the canonical `occurred_at`). The server preserves this and also records its own receive time.",
           "type": "string"
+        },
+        "context": {
+          "additionalProperties": false,
+          "title": "EventContext",
+          "description": "Shared per-event global context. Optional on the envelope; when present, releaseVersion/locale/market/diagnosticsLevel are required.",
+          "type": "object",
+          "properties": {
+            "releaseVersion": {
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Producer release / build version (e.g. \"web@2026.06.1\").",
+              "type": "string"
+            },
+            "locale": {
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "BCP-47 locale of the session (e.g. \"en-CA\").",
+              "type": "string"
+            },
+            "market": {
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "Business market / region the session belongs to.",
+              "type": "string"
+            },
+            "diagnosticsLevel": {
+              "description": "Diagnostics collection level: essential | standard | assisted_support.",
+              "anyOf": [
+                {
+                  "const": "essential",
+                  "type": "string"
+                },
+                {
+                  "const": "standard",
+                  "type": "string"
+                },
+                {
+                  "const": "assisted_support",
+                  "type": "string"
+                }
+              ]
+            },
+            "routeName": {
+              "maxLength": 256,
+              "description": "Logical route / screen name (not the raw URL).",
+              "type": "string"
+            },
+            "routeType": {
+              "maxLength": 64,
+              "description": "Route classification (e.g. \"page\", \"modal\", \"tab\").",
+              "type": "string"
+            },
+            "componentId": {
+              "maxLength": 256,
+              "description": "Stable component identifier.",
+              "type": "string"
+            },
+            "componentType": {
+              "maxLength": 128,
+              "description": "Component classification.",
+              "type": "string"
+            },
+            "browserFamily": {
+              "maxLength": 64,
+              "description": "Browser family (e.g. \"Chrome\").",
+              "type": "string"
+            },
+            "browserVersion": {
+              "maxLength": 64,
+              "description": "Browser version string.",
+              "type": "string"
+            },
+            "osFamily": {
+              "maxLength": 64,
+              "description": "OS family (e.g. \"macOS\").",
+              "type": "string"
+            },
+            "deviceType": {
+              "maxLength": 64,
+              "description": "Device classification (e.g. \"desktop\", \"mobile\").",
+              "type": "string"
+            },
+            "viewportWidth": {
+              "minimum": 0,
+              "description": "Viewport width in CSS pixels.",
+              "type": "integer"
+            },
+            "viewportHeight": {
+              "minimum": 0,
+              "description": "Viewport height in CSS pixels.",
+              "type": "integer"
+            },
+            "featureFlags": {
+              "description": "Active feature-flag map at capture time.",
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {}
+              }
+            },
+            "experimentVariant": {
+              "maxLength": 128,
+              "description": "Active experiment variant identifier.",
+              "type": "string"
+            },
+            "networkState": {
+              "maxLength": 64,
+              "description": "Coarse network state (e.g. \"online\", \"4g\", \"offline\").",
+              "type": "string"
+            },
+            "pageUrl": {
+              "maxLength": 2048,
+              "description": "Current page URL. Not part of the abstract global_context vocabulary (which uses routeName/routeType); carried here as an explicit optional field for browser producers that capture the raw URL.",
+              "type": "string"
+            },
+            "supportCode": {
+              "maxLength": 64,
+              "description": "Support code correlating user-visible reports to a session. Shape only — generation/lookup is handled in a later wave.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "releaseVersion",
+            "locale",
+            "market",
+            "diagnosticsLevel"
+          ]
+        },
+        "severity": {
+          "description": "Event severity: info | warn | error.",
+          "anyOf": [
+            {
+              "const": "info",
+              "type": "string"
+            },
+            {
+              "const": "warn",
+              "type": "string"
+            },
+            {
+              "const": "error",
+              "type": "string"
+            }
+          ]
+        },
+        "durationMs": {
+          "minimum": 0,
+          "description": "Duration in milliseconds for events that measure one (e.g. perf.api_latency, perf.long_task).",
+          "type": "integer"
+        },
+        "httpStatus": {
+          "minimum": 100,
+          "maximum": 599,
+          "description": "HTTP status code for API-oriented events (e.g. error.api).",
+          "type": "integer"
         },
         "attributes": {
           "description": "Customer-provided attribute bag. Keys are camelCase strings.",
@@ -362,6 +833,7 @@
         }
       },
       "required": [
+        "schemaVersion",
         "eventId",
         "type",
         "capturedAt",
@@ -372,14 +844,76 @@
     "EventType": {
       "minLength": 1,
       "maxLength": 128,
-      "pattern": "^[a-zA-Z0-9_.\\-:/]+$",
-      "description": "Dot- or slash-separated event type identifier (e.g. \"page_view\", \"dom.click\", \"app.checkout.completed\").",
+      "pattern": "^(?:(?:view\\.start|view\\.end|action\\.click|action\\.submit|action\\.navigation|error\\.js|error\\.api|error\\.resource|perf\\.api_latency|perf\\.long_task|ux\\.dead_click|ux\\.rage_click|ux\\.repeated_submit|support\\.report_submitted)|(?!(?:view|action|error|perf|ux|support)\\.)[a-zA-Z0-9_.\\-:/]+)$",
+      "title": "EventType",
+      "description": "Dot- or slash-separated event type identifier. Open vocabulary with a reserved canonical core (e.g. \"view.start\", \"action.click\", or a custom \"app.checkout.completed\").",
       "type": "string"
     },
     "IsoDateTime": {
       "format": "date-time",
       "description": "ISO-8601 / RFC 3339 timestamp (UTC recommended).",
       "type": "string"
+    },
+    "KnownEventType": {
+      "description": "Canonical event type. One of the 14 reserved names with defined semantics across producers and consumers.",
+      "anyOf": [
+        {
+          "const": "view.start",
+          "type": "string"
+        },
+        {
+          "const": "view.end",
+          "type": "string"
+        },
+        {
+          "const": "action.click",
+          "type": "string"
+        },
+        {
+          "const": "action.submit",
+          "type": "string"
+        },
+        {
+          "const": "action.navigation",
+          "type": "string"
+        },
+        {
+          "const": "error.js",
+          "type": "string"
+        },
+        {
+          "const": "error.api",
+          "type": "string"
+        },
+        {
+          "const": "error.resource",
+          "type": "string"
+        },
+        {
+          "const": "perf.api_latency",
+          "type": "string"
+        },
+        {
+          "const": "perf.long_task",
+          "type": "string"
+        },
+        {
+          "const": "ux.dead_click",
+          "type": "string"
+        },
+        {
+          "const": "ux.rage_click",
+          "type": "string"
+        },
+        {
+          "const": "ux.repeated_submit",
+          "type": "string"
+        },
+        {
+          "const": "support.report_submitted",
+          "type": "string"
+        }
+      ]
     },
     "ScrubberReport": {
       "additionalProperties": false,
@@ -451,6 +985,23 @@
       "required": [
         "name",
         "version"
+      ]
+    },
+    "Severity": {
+      "description": "Event severity: info | warn | error.",
+      "anyOf": [
+        {
+          "const": "info",
+          "type": "string"
+        },
+        {
+          "const": "warn",
+          "type": "string"
+        },
+        {
+          "const": "error",
+          "type": "string"
+        }
       ]
     },
     "Ulid": {

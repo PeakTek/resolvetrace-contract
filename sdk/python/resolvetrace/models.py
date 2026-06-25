@@ -61,6 +61,54 @@ class SdkIdentity(_Wire):
     runtime: str | None = Field(default=None, min_length=1, max_length=64)
 
 
+#: Open vocabulary with reserved canonical core (mirrors EVENT_TYPE_PATTERN in
+#: ``schemas/src/events.ts``): a value is valid iff it is one of the 14
+#: canonical literals OR a name not in a reserved canonical namespace.
+_EVENT_TYPE_PATTERN = (
+    r"^(?:(?:view\.start|view\.end|action\.click|action\.submit"
+    r"|action\.navigation|error\.js|error\.api|error\.resource"
+    r"|perf\.api_latency|perf\.long_task|ux\.dead_click|ux\.rage_click"
+    r"|ux\.repeated_submit|support\.report_submitted)"
+    r"|(?!(?:view|action|error|perf|ux|support)\.)[a-zA-Z0-9_.\-:/]+)$"
+)
+
+#: Diagnostics collection level (mirrors ``diagnosticsLevel`` on the wire).
+DiagnosticsLevel = Literal["essential", "standard", "assisted_support"]
+
+#: Event severity classification (mirrors ``severity`` on the wire).
+Severity = Literal["info", "warn", "error"]
+
+
+class EventContext(_Wire):
+    """Shared per-event global context.
+
+    Optional on the envelope; when present, ``releaseVersion``/``locale``/
+    ``market``/``diagnosticsLevel`` are required.
+    """
+
+    release_version: str = Field(..., alias="releaseVersion", min_length=1, max_length=256)
+    locale: str = Field(..., min_length=1, max_length=64)
+    market: str = Field(..., min_length=1, max_length=64)
+    diagnostics_level: DiagnosticsLevel = Field(..., alias="diagnosticsLevel")
+    route_name: str | None = Field(default=None, alias="routeName", max_length=256)
+    route_type: str | None = Field(default=None, alias="routeType", max_length=64)
+    component_id: str | None = Field(default=None, alias="componentId", max_length=256)
+    component_type: str | None = Field(default=None, alias="componentType", max_length=128)
+    browser_family: str | None = Field(default=None, alias="browserFamily", max_length=64)
+    browser_version: str | None = Field(default=None, alias="browserVersion", max_length=64)
+    os_family: str | None = Field(default=None, alias="osFamily", max_length=64)
+    device_type: str | None = Field(default=None, alias="deviceType", max_length=64)
+    viewport_width: int | None = Field(default=None, alias="viewportWidth", ge=0)
+    viewport_height: int | None = Field(default=None, alias="viewportHeight", ge=0)
+    feature_flags: dict[str, Any] | None = Field(default=None, alias="featureFlags")
+    experiment_variant: str | None = Field(
+        default=None, alias="experimentVariant", max_length=128
+    )
+    network_state: str | None = Field(default=None, alias="networkState", max_length=64)
+    page_url: str | None = Field(default=None, alias="pageUrl", max_length=2048)
+    support_code: str | None = Field(default=None, alias="supportCode", max_length=64)
+
+
 class EventEnvelopeModel(_Wire):
     """Pydantic model for the ingest event envelope.
 
@@ -70,12 +118,17 @@ class EventEnvelopeModel(_Wire):
     is required (tests, debug mode).
     """
 
+    schema_version: int = Field(..., alias="schemaVersion", ge=1)
     event_id: str = Field(..., alias="eventId", pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
     session_id: str | None = Field(
         default=None, alias="sessionId", pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$"
     )
-    type: str = Field(..., min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.\-:/]+$")
+    type: str = Field(..., min_length=1, max_length=128, pattern=_EVENT_TYPE_PATTERN)
     captured_at: str = Field(..., alias="capturedAt")
+    context: EventContext | None = None
+    severity: Severity | None = None
+    duration_ms: int | None = Field(default=None, alias="durationMs", ge=0)
+    http_status: int | None = Field(default=None, alias="httpStatus", ge=100, le=599)
     attributes: dict[str, Any] | None = None
     scrubber: ScrubberReport
     clock_skew_detected: bool | None = Field(default=None, alias="clockSkewDetected")
@@ -324,11 +377,14 @@ EventEnvelope = EventEnvelopeModel
 
 __all__ = [
     "Diagnostics",
+    "DiagnosticsLevel",
     "ErrorResponse",
     "EventBatchAcceptedResponse",
     "EventBatchRequest",
+    "EventContext",
     "EventEnvelope",
     "EventEnvelopeModel",
+    "Severity",
     "EventsDroppedCounters",
     "LastErrorInfo",
     "RateLimitErrorResponse",

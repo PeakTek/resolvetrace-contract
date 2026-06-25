@@ -5,7 +5,7 @@
  * fully-formed `EventEnvelope` that matches the published wire schema.
  */
 
-import { SDK_NAME, SDK_VERSION } from './constants.js';
+import { SCHEMA_VERSION, SDK_NAME, SDK_VERSION } from './constants.js';
 import { detectRuntime } from './runtime.js';
 import { scrubAttributes } from './scrubber.js';
 import type { ActorIdentity, EventEnvelope, EventInput } from './types.js';
@@ -66,6 +66,7 @@ export function buildEnvelope(
   const scrubbed = scrubAttributes(input.attributes, opts.scrubBudgetMs);
 
   const envelope: EventEnvelope = {
+    schemaVersion: SCHEMA_VERSION,
     eventId: generateUlid(now),
     type: input.type,
     capturedAt,
@@ -77,6 +78,10 @@ export function buildEnvelope(
     },
   };
   if (input.sessionId) envelope.sessionId = input.sessionId;
+  if (input.context !== undefined) envelope.context = input.context;
+  if (input.severity !== undefined) envelope.severity = input.severity;
+  if (input.durationMs !== undefined) envelope.durationMs = input.durationMs;
+  if (input.httpStatus !== undefined) envelope.httpStatus = input.httpStatus;
   if (scrubbed.attributes !== undefined) envelope.attributes = scrubbed.attributes;
   if (opts.actor !== undefined) envelope.actor = opts.actor;
   return envelope;

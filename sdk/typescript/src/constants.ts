@@ -13,6 +13,35 @@ export const SDK_VERSION = '0.1.0';
 /** Scrubber identity. Bumped when Stage-1 rules change in a user-visible way. */
 export const SCRUBBER_VERSION = `sdk@${SDK_VERSION}`;
 
+/**
+ * Current major of the shared event schema. Stamped into `envelope.schemaVersion`
+ * on every event. Consumers reject unsupported majors; additive changes stay
+ * within a major.
+ */
+export const SCHEMA_VERSION = 1;
+
+/**
+ * Canonical event-type vocabulary. The keys are stable symbolic names for
+ * Wave 21+ capture code to reference; the values are the wire `type` strings.
+ * Mirrors `KnownEventType` in `schemas/events.json`.
+ */
+export const EVENT_TYPES = {
+  VIEW_START: 'view.start',
+  VIEW_END: 'view.end',
+  ACTION_CLICK: 'action.click',
+  ACTION_SUBMIT: 'action.submit',
+  ACTION_NAVIGATION: 'action.navigation',
+  ERROR_JS: 'error.js',
+  ERROR_API: 'error.api',
+  ERROR_RESOURCE: 'error.resource',
+  PERF_API_LATENCY: 'perf.api_latency',
+  PERF_LONG_TASK: 'perf.long_task',
+  UX_DEAD_CLICK: 'ux.dead_click',
+  UX_RAGE_CLICK: 'ux.rage_click',
+  UX_REPEATED_SUBMIT: 'ux.repeated_submit',
+  SUPPORT_REPORT_SUBMITTED: 'support.report_submitted',
+} as const;
+
 /** Batching caps. */
 export const MAX_BATCH_EVENTS = 100;
 export const MAX_BATCH_BYTES = 512 * 1024; // 512 KiB
