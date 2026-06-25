@@ -128,6 +128,12 @@ export class ResolveTraceClient {
   /** Public session controls. */
   public readonly session: {
     readonly id: Ulid | null;
+    /**
+     * Server-minted per-session support code for display ("Support code:
+     * XXXXXXXX"). `null` until the first session-start resolves with one;
+     * lives for the session's lifetime; replaced when a new session starts.
+     */
+    readonly supportCode: string | null;
     end: (opts?: SessionEndOptions) => Promise<void>;
     restart: () => Ulid;
   };
@@ -170,6 +176,10 @@ export class ResolveTraceClient {
       id: {
         enumerable: true,
         get: () => mgr.getId(),
+      },
+      supportCode: {
+        enumerable: true,
+        get: () => mgr.getSupportCode(),
       },
       end: {
         enumerable: true,

@@ -47,6 +47,20 @@ const IsoDateTime = Type.String({
   description: 'ISO-8601 / RFC 3339 timestamp (UTC recommended).',
 });
 
+/**
+ * Crockford base32 alphabet (excludes I/L/O/U), uppercase, length 8 — the
+ * canonical normalized form of a per-session support code. Same alphabet
+ * family as `ULID_PATTERN`, fixed to 8 characters. The server mints the code
+ * on session start; the SDK only carries it through and exposes it for display.
+ */
+export const SUPPORT_CODE_PATTERN = '^[0-9A-HJKMNP-TV-Z]{8}$';
+
+const SupportCode = Type.String({
+  pattern: SUPPORT_CODE_PATTERN,
+  description:
+    'Per-session support code (Crockford base32, 8 chars, uppercase canonical). Server-minted on session start; the SDK surfaces it for "Support code: XXXXXXXX" display.',
+});
+
 /* -------------------------------------------------------------------------- */
 /* Session metadata (non-PII)                                                 */
 /* -------------------------------------------------------------------------- */
@@ -176,6 +190,7 @@ export const SessionStartResponse = Type.Object(
   {
     sessionId: Ulid,
     acceptedAt: IsoDateTime,
+    supportCode: SupportCode,
   },
   {
     additionalProperties: false,

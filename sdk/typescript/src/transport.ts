@@ -46,6 +46,7 @@ import type {
   EventEnvelope,
   FlushResult,
   SessionEndPayload,
+  SessionStartAcceptance,
   SessionStartPayload,
   SessionUnknownErrorBody,
   Ulid,
@@ -158,6 +159,29 @@ async function parseSessionUnknownBody(
   }
   if (typeof obj.message === 'string') out.message = obj.message;
   return out;
+}
+
+/** Canonical (normalized) support-code shape: Crockford base32, 8 chars, uppercase. */
+const SUPPORT_CODE_RE = /^[0-9A-HJKMNP-TV-Z]{8}$/;
+
+/**
+ * Parse a 2xx `/v1/session/start` body and extract the support code. Wrapped in
+ * try/catch so a malformed or non-JSON response never propagates out of the
+ * best-effort session-start path. Returns `null` when the body is unreadable or
+ * carries no well-formed `supportCode`.
+ */
+async function parseSessionStartAcceptance(
+  response: Response,
+): Promise<SessionStartAcceptance | null> {
+  try {
+    const raw: unknown = await response.json();
+    if (!raw || typeof raw !== 'object') return null;
+    const code = (raw as Record<string, unknown>).supportCode;
+    if (typeof code !== 'string' || !SUPPORT_CODE_RE.test(code)) return null;
+    return { supportCode: code };
+  } catch {
+    return null;
+  }
 }
 
 /** Pull the unresolved session IDs from a 409 body, falling back to the batch. */
@@ -553,10 +577,37 @@ export class Transport {
    * POST a session-start payload. Best-effort — the caller fires-and-forgets
    * for performance, so this method swallows non-2xx responses into a
    * `TransportError` reported via `onError`. Idempotent server-side.
+   *
+   * On a 2xx the response body is parsed (in a try/catch so a malformed body
+   * never breaks the SDK) and the `supportCode` is surfaced back to the caller
+   * via a `SessionStartAcceptance`. Returns `null` when there is no usable
+   * body: network failure, non-2xx, unparseable JSON, or a body missing a
+   * well-formed `supportCode`.
    */
-  async postSessionStart(payload: SessionStartPayload): Promise<void> {
+  async postSessionStart(
+    payload: SessionStartPayload,
+  ): Promise<SessionStartAcceptance | null> {
     const url = new URL(SESSION_START_PATH, this.config.endpointUrl).toString();
-    await this.postSessionPayload(url, payload, 'session.start');
+    const body = JSON.stringify(payload);
+    try {
+      const response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body,
+      });
+      if (response.status >= 200 && response.status < 300) {
+        return parseSessionStartAcceptance(response);
+      }
+      this.recordError('session.start.http');
+    } catch (err) {
+      this.debugLog('session.start.network', err);
+      this.recordError('session.start.network');
+    }
+    return null;
   }
 
   /** POST a session-end payload. Same fire-and-forget semantics as start. */

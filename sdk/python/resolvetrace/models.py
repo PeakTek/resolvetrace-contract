@@ -246,6 +246,7 @@ class SessionStartRequest(_Wire):
 class SessionStartResponse(_Wire):
     session_id: str = Field(..., alias="sessionId", pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
     accepted_at: str = Field(..., alias="acceptedAt")
+    support_code: str = Field(..., alias="supportCode", pattern=r"^[0-9A-HJKMNP-TV-Z]{8}$")
 
 
 class SessionEndRequest(_Wire):

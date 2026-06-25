@@ -215,6 +215,29 @@ export interface SessionStartPayload {
   };
 }
 
+/**
+ * Body returned by the server on a successful `POST /v1/session/start`
+ * (HTTP 201). Mirrors `SessionStartResponse` in `schemas/session.json`.
+ * `supportCode` is a required, server-minted per-session code (Crockford
+ * base32, 8 chars, uppercase) that the SDK surfaces for display.
+ */
+export interface SessionStartResponse {
+  sessionId: Ulid;
+  acceptedAt: IsoDateTime;
+  supportCode: string;
+}
+
+/**
+ * What the transport returns to the caller after `postSessionStart`. The start
+ * call is best-effort, so the body may be unavailable (network failure, non-2xx,
+ * or a malformed/parse-failed response) — in which case this is `null`. When the
+ * server returned a usable body, at least `supportCode` is surfaced so the
+ * `SessionManager` can store it.
+ */
+export interface SessionStartAcceptance {
+  supportCode: string;
+}
+
 /** Body sent by the SDK on `POST /v1/session/end`. */
 export interface SessionEndPayload {
   sessionId: Ulid;

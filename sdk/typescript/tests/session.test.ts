@@ -5,6 +5,7 @@ import {
   SessionManager,
   type SessionTransport,
 } from '../src/session.js';
+import type { SessionStartAcceptance } from '../src/types.js';
 import { IdentityState } from '../src/identity.js';
 import {
   SessionRecoveryFailedError,
@@ -21,7 +22,7 @@ const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** Mock transport whose start/end calls are sniffable. */
 function makeSessionTransport(opts: {
-  startImpl?: () => Promise<void>;
+  startImpl?: () => Promise<SessionStartAcceptance | null | void>;
   endImpl?: () => Promise<void>;
 } = {}): {
   transport: SessionTransport;
@@ -33,7 +34,8 @@ function makeSessionTransport(opts: {
   const transport: SessionTransport = {
     postSessionStart: async (payload) => {
       startCalls.push(payload);
-      if (opts.startImpl) await opts.startImpl();
+      if (opts.startImpl) return (await opts.startImpl()) ?? null;
+      return null;
     },
     postSessionEnd: async (payload) => {
       endCalls.push(payload);

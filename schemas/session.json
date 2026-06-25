@@ -382,11 +382,17 @@
           "format": "date-time",
           "description": "ISO-8601 / RFC 3339 timestamp (UTC recommended).",
           "type": "string"
+        },
+        "supportCode": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{8}$",
+          "description": "Per-session support code (Crockford base32, 8 chars, uppercase canonical). Server-minted on session start; the SDK surfaces it for \"Support code: XXXXXXXX\" display.",
+          "type": "string"
         }
       },
       "required": [
         "sessionId",
-        "acceptedAt"
+        "acceptedAt",
+        "supportCode"
       ]
     },
     "SessionViewport": {

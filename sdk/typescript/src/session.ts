@@ -28,6 +28,7 @@ import type {
   IsoDateTime,
   SessionEndPayload,
   SessionEndReason,
+  SessionStartAcceptance,
   SessionStartPayload,
   Ulid,
 } from './types.js';
@@ -62,7 +63,14 @@ interface StoredSessionMaybe {
 
 /** Transport surface the session manager uses. Kept narrow for tests. */
 export interface SessionTransport {
-  postSessionStart(payload: SessionStartPayload): Promise<void>;
+  /**
+   * Best-effort session-start POST. Resolves with the parsed start-response
+   * body (carrying at least `supportCode`) on success, or `null` when no usable
+   * body was returned (network failure, non-2xx, or a malformed response).
+   */
+  postSessionStart(
+    payload: SessionStartPayload,
+  ): Promise<SessionStartAcceptance | null>;
   postSessionEnd(payload: SessionEndPayload): Promise<void>;
 }
 
@@ -141,6 +149,13 @@ export class SessionManager {
 
   private state: SessionState = 'idle';
   private currentId: Ulid | null = null;
+  /**
+   * Server-minted support code for the current session. `null` until the first
+   * session-start resolves with a usable body; lives for the session's
+   * lifetime; cleared when the session rolls/ends and replaced when a new
+   * session's start resolves.
+   */
+  private supportCode: string | null = null;
   private startedAtMs: number | null = null;
   private lastActivityMs: number | null = null;
   private lastFlushedActivityMs: number | null = null;
@@ -186,6 +201,14 @@ export class SessionManager {
     return this.currentId;
   }
 
+  /**
+   * Server-minted support code for the current session, or `null` until the
+   * first session-start resolves with one. Surfaced via `client.session.supportCode`.
+   */
+  getSupportCode(): string | null {
+    return this.supportCode;
+  }
+
   /** Current state. Useful for tests; not part of the public package API. */
   getState(): SessionState {
     return this.state;
@@ -221,6 +244,7 @@ export class SessionManager {
     this.clearTimers();
     this.state = 'idle';
     this.currentId = null;
+    this.supportCode = null;
     this.startedAtMs = null;
     this.lastActivityMs = null;
     this.lastFlushedActivityMs = null;
@@ -255,6 +279,7 @@ export class SessionManager {
     } finally {
       this.state = 'idle';
       this.currentId = null;
+      this.supportCode = null;
       this.startedAtMs = null;
       this.lastActivityMs = null;
       this.lastFlushedActivityMs = null;
@@ -288,6 +313,7 @@ export class SessionManager {
     } finally {
       this.state = 'idle';
       this.currentId = null;
+      this.supportCode = null;
       this.startedAtMs = null;
       this.lastActivityMs = null;
       this.lastFlushedActivityMs = null;
@@ -324,9 +350,11 @@ export class SessionManager {
    */
   async issueStart(): Promise<void> {
     if (this.currentId === null) return;
-    const payload = this.buildStartPayload(this.currentId, this.startedAtMs ?? this.nowFn());
+    const id = this.currentId;
+    const payload = this.buildStartPayload(id, this.startedAtMs ?? this.nowFn());
     try {
-      await this.transport.postSessionStart(payload);
+      const acceptance = await this.transport.postSessionStart(payload);
+      this.applyStartAcceptance(id, acceptance);
     } catch (err) {
       this.reportError(err);
     }
@@ -344,18 +372,41 @@ export class SessionManager {
     this.lastActivityMs = now.getTime();
     this.lastFlushedActivityMs = null;
     this.state = 'active';
+    // A fresh session starts with no support code; it is populated when this
+    // session's start resolves (below). Clears any prior session's code.
+    this.supportCode = null;
     this.armInactivityTimer();
     this.armMaxDurationTimer();
     if (opts.persistAndPost) {
       this.flushStoredSession();
       // Fire-and-forget — caller proceeds with the events batch immediately.
+      // The parsed start-response body (carrying the support code) is captured
+      // when it resolves, without blocking `capture()`.
       const payload = this.buildStartPayload(id, now.getTime());
       // Clear the pending-identity slot now that it's about to ship; identity
       // remains set on `IdentityState` and decorates subsequent events.
       this.pendingIdentityForStart = null;
-      void this.transport.postSessionStart(payload).catch((err) => this.reportError(err));
+      void this.transport
+        .postSessionStart(payload)
+        .then((acceptance) => this.applyStartAcceptance(id, acceptance))
+        .catch((err) => this.reportError(err));
     }
     return id;
+  }
+
+  /**
+   * Fold a resolved start-response body into manager state. Only applies when
+   * the session that issued the start is still the current one, so a late
+   * response for a rolled-over session can't clobber a newer session's code.
+   * A `null` acceptance (no usable body) leaves the existing code untouched.
+   */
+  private applyStartAcceptance(
+    forSessionId: Ulid,
+    acceptance: SessionStartAcceptance | null,
+  ): void {
+    if (acceptance === null) return;
+    if (this.currentId !== forSessionId) return;
+    this.supportCode = acceptance.supportCode;
   }
 
   private buildStartPayload(id: Ulid, startedAtMs: number): SessionStartPayload {
@@ -448,6 +499,7 @@ export class SessionManager {
     this.clearStoredSession();
     this.state = 'idle';
     this.currentId = null;
+    this.supportCode = null;
     this.startedAtMs = null;
     this.lastActivityMs = null;
     this.lastFlushedActivityMs = null;
