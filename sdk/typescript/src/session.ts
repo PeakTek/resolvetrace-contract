@@ -75,7 +75,6 @@ export interface SessionManagerOptions {
   sessionInactivityMs?: number;
   sessionMaxDurationMs?: number;
   autoSession?: boolean;
-  sessionAttributes?: () => Record<string, unknown>;
   /** Override `Date.now` for tests. */
   now?: () => number;
   /** Override `setTimeout` for tests / fake timers. */
@@ -134,7 +133,6 @@ export class SessionManager {
   private readonly inactivityMs: number;
   private readonly maxDurationMs: number;
   private readonly autoSession: boolean;
-  private readonly sessionAttributes: (() => Record<string, unknown>) | undefined;
   private readonly storageKey: string;
 
   private readonly nowFn: () => number;
@@ -163,7 +161,6 @@ export class SessionManager {
     this.inactivityMs = opts.sessionInactivityMs ?? DEFAULT_SESSION_INACTIVITY_MS;
     this.maxDurationMs = opts.sessionMaxDurationMs ?? DEFAULT_SESSION_MAX_DURATION_MS;
     this.autoSession = opts.autoSession ?? true;
-    this.sessionAttributes = opts.sessionAttributes;
     this.storageKey = endpointStorageKey(this.endpoint);
 
     this.nowFn = opts.now ?? (() => Date.now());
@@ -373,32 +370,12 @@ export class SessionManager {
         payload.client = { userAgent: ua.slice(0, 512) };
       }
     }
-    const attrs: Record<string, unknown> = {};
-    if (isBrowser()) {
-      const loc = (globalThis as { location?: { href?: string } }).location;
-      if (typeof loc?.href === 'string') {
-        attrs.page_url = loc.href;
-      }
-      const win = globalThis as { innerWidth?: number; innerHeight?: number };
-      if (typeof win.innerWidth === 'number' && typeof win.innerHeight === 'number') {
-        attrs.viewport = `${win.innerWidth}x${win.innerHeight}`;
-      }
-    }
-    if (this.sessionAttributes) {
-      try {
-        const extra = this.sessionAttributes();
-        if (extra && typeof extra === 'object') {
-          for (const [k, v] of Object.entries(extra)) {
-            attrs[k] = v;
-          }
-        }
-      } catch (err) {
-        this.reportError(err);
-      }
-    }
-    if (Object.keys(attrs).length > 0) {
-      payload.attributes = attrs;
-    }
+    // NOTE: page context (page_url / viewport) is intentionally NOT placed on
+    // the session-start body. `SessionStartRequest` is `additionalProperties:
+    // false` and carries no `attributes` field, so any such bag is rejected
+    // with HTTP 400 by both the contract validator and the ingest server.
+    // Page context is per-page, not per-session, and is now enriched onto the
+    // `page_view` event instead (see `enrichPageContext` in client.ts).
     // Identity for the start payload: prefer the pending slot, otherwise
     // fall back to whatever identity is currently set on IdentityState.
     let identityBlock: { userId: string; traits?: Record<string, unknown> } | null = null;

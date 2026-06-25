@@ -160,6 +160,100 @@ function dropImplicitShutdownEnds(captures: Capture[]): Capture[] {
   });
 }
 
+interface BrowserGlobals {
+  href: string;
+  userAgent: string;
+  innerWidth: number;
+  innerHeight: number;
+}
+
+/**
+ * Define the browser globals the SDK probes (`window`, `document`, `location`,
+ * `navigator`, `innerWidth`, `innerHeight`, plus a no-op `sessionStorage`) and
+ * return a function that restores the previous descriptors. Without these,
+ * `isBrowser()` is false under node and the SDK never enters its browser-only
+ * branches (UA lift on session-start, page-context enrichment on `page_view`)
+ * — the exact blind spot that let a browser-only session-start defect ship.
+ */
+function installBrowserGlobals(g: BrowserGlobals): () => void {
+  const store = new Map<string, string>();
+  const values: Record<string, unknown> = {
+    window: {},
+    document: {},
+    location: { href: g.href },
+    navigator: { userAgent: g.userAgent },
+    innerWidth: g.innerWidth,
+    innerHeight: g.innerHeight,
+    sessionStorage: {
+      getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+      clear: () => store.clear(),
+      key: () => null,
+      length: 0,
+    },
+  };
+  const saved: Array<[string, PropertyDescriptor | undefined]> = [];
+  for (const [key, value] of Object.entries(values)) {
+    saved.push([key, Object.getOwnPropertyDescriptor(globalThis, key)]);
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
+  return () => {
+    for (const [key, desc] of saved) {
+      if (desc) {
+        Object.defineProperty(globalThis, key, desc);
+      } else {
+        Object.defineProperty(globalThis, key, {
+          configurable: true,
+          value: undefined,
+        });
+      }
+    }
+  };
+}
+
+/**
+ * Like `runScenario`, but installs browser globals for the duration of the run
+ * so the SDK's `isBrowser()`-gated code paths execute — the `client.userAgent`
+ * lift on session-start and the page-context enrichment on `page_view` events.
+ * Critically, this also exercises the session-start body shape produced in a
+ * browser, so the validator catches any re-introduction of a stray top-level
+ * key (e.g. an `attributes` bag) that `SessionStartRequest`'s
+ * `additionalProperties: false` rejects with HTTP 400. A node-only harness
+ * never enters these branches, which is how that defect reached production.
+ * Globals are restored afterwards so every other scenario stays in node.
+ */
+async function runBrowserScenario(
+  id: string,
+  drive: (client: ResolveTraceClient) => Promise<void>,
+): Promise<Capture[]> {
+  const restore = installBrowserGlobals({
+    href: 'https://example.com/checkout',
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    innerWidth: 1440,
+    innerHeight: 900,
+  });
+  try {
+    const captures: Capture[] = [];
+    const scenario = { current: id };
+    const client = makeClient(captures, scenario);
+    try {
+      await drive(client);
+    } finally {
+      await settle(client);
+    }
+    return captures;
+  } finally {
+    restore();
+  }
+}
+
 async function main(): Promise<void> {
   const all: Capture[] = [];
 
@@ -229,6 +323,26 @@ async function main(): Promise<void> {
         client.capture({ type: 'test.event.one' });
         client.capture({ type: 'test.event.two' });
         client.capture({ type: 'test.event.three' });
+      }),
+    ),
+  );
+
+  // Scenario 6: browser-page-view
+  //   - A `page_view` under simulated browser globals, so the SDK takes its
+  //     browser-only paths: the `client.userAgent` lift on session-start and
+  //     page-context enrichment (pageUrl + viewport) on the `page_view` event.
+  // Expected captures (post-filter):
+  //   POST /v1/session/start (client.userAgent, NO top-level `attributes`),
+  //   POST /v1/events (page_view with attributes.context)
+  // This is the only scenario that exercises the `isBrowser()` branch. The
+  // session-start body it produces is validated against `SessionStartRequest`
+  // (`additionalProperties: false`); if any browser-only code re-attaches a
+  // stray top-level key such as an `attributes` bag, validation fails here.
+  // A node-only dumper never enters this branch — the original blind spot.
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario('browser-page-view', async (client) => {
+        client.track('page_view');
       }),
     ),
   );

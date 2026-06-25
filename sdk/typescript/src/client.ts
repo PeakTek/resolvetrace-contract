@@ -11,6 +11,7 @@ import type { ResolvedConfig } from './config.js';
 import { buildEnvelope } from './envelope.js';
 import { SessionRequiredError } from './errors.js';
 import { IdentityState } from './identity.js';
+import { isBrowser } from './runtime.js';
 import { SessionManager } from './session.js';
 import { Transport } from './transport.js';
 import type {
@@ -24,6 +25,52 @@ import type {
   ShutdownOptions,
   Ulid,
 } from './types.js';
+
+/** Event types that receive automatic browser page-context enrichment. */
+const PAGE_CONTEXT_EVENT_TYPES = new Set<string>(['page_view', 'view.start']);
+
+/**
+ * In a browser runtime, enrich page-oriented events with a `context` block
+ * carrying the current page URL and viewport. This is where per-page context
+ * belongs — it was previously (incorrectly) attached to the session-start
+ * body, which the `SessionStartRequest` contract rejects.
+ *
+ * Field names are camelCase and chosen to be forward-compatible with the
+ * planned structured event `context` block (`pageUrl`, `viewportWidth`,
+ * `viewportHeight`, `routeName`). The enricher never overwrites a key the
+ * caller already supplied under `context`, so an app that passes its own
+ * `context` (e.g. with `routeName`) stays authoritative.
+ */
+function enrichPageContext(event: EventInput): EventInput {
+  if (!isBrowser()) return event;
+  if (!PAGE_CONTEXT_EVENT_TYPES.has(event.type)) return event;
+
+  const ctx: Record<string, unknown> = {};
+  const loc = (globalThis as { location?: { href?: string } }).location;
+  if (typeof loc?.href === 'string') {
+    ctx.pageUrl = loc.href;
+  }
+  const win = globalThis as { innerWidth?: number; innerHeight?: number };
+  if (typeof win.innerWidth === 'number') {
+    ctx.viewportWidth = win.innerWidth;
+  }
+  if (typeof win.innerHeight === 'number') {
+    ctx.viewportHeight = win.innerHeight;
+  }
+  if (Object.keys(ctx).length === 0) return event;
+
+  const existingAttrs = event.attributes ?? {};
+  const existingContext = existingAttrs['context'];
+  const mergedContext =
+    existingContext && typeof existingContext === 'object'
+      ? { ...ctx, ...(existingContext as Record<string, unknown>) }
+      : ctx;
+
+  return {
+    ...event,
+    attributes: { ...existingAttrs, context: mergedContext },
+  };
+}
 
 /** Resolve a fetch implementation, preferring the user's injected one. */
 function resolveFetch(cfg: ResolvedConfig): typeof fetch {
@@ -74,7 +121,6 @@ export class ResolveTraceClient {
       sessionInactivityMs: this.config.sessionInactivityMs,
       sessionMaxDurationMs: this.config.sessionMaxDurationMs,
       autoSession: this.config.autoSession,
-      sessionAttributes: this.config.sessionAttributes,
     });
     // Wire transport's 409 recovery hook to the session manager.
     this.transport.setSessionUnknownHandler(async () => {
@@ -104,6 +150,10 @@ export class ResolveTraceClient {
    * round-trip.
    */
   capture(event: EventInput): string {
+    // Auto-enrich page-oriented events with browser page context (URL +
+    // viewport). No-op outside the browser and for non-page events.
+    event = enrichPageContext(event);
+
     let sessionId: Ulid;
     try {
       sessionId = this.sessionManager.ensureStarted();

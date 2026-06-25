@@ -126,7 +126,6 @@ describe('SessionManager state machine', () => {
       autoSession: boolean;
       sessionInactivityMs: number;
       sessionMaxDurationMs: number;
-      sessionAttributes: () => Record<string, unknown>;
       onError: (err: Error) => void;
     }> = {},
   ): {
@@ -146,7 +145,6 @@ describe('SessionManager state machine', () => {
       autoSession: overrides.autoSession,
       sessionInactivityMs: overrides.sessionInactivityMs,
       sessionMaxDurationMs: overrides.sessionMaxDurationMs,
-      sessionAttributes: overrides.sessionAttributes,
       now: () => nowMs,
       setTimer: setTimerSpy as unknown as (cb: () => void, ms: number) => unknown,
       clearTimer: clearTimerSpy as unknown as (handle: unknown) => void,
@@ -711,5 +709,162 @@ describe('session_unknown recovery through createClient', () => {
       errors.some((e) => e instanceof SessionRecoveryFailedError),
     ).toBe(true);
     expect(client.session.id).toBe(sessionIdBefore);
+  });
+});
+
+describe('browser session-start + page-context relocation', () => {
+  let storage: Record<string, string>;
+  const saved = new Map<string, PropertyDescriptor | undefined>();
+
+  function define(key: string, value: unknown): void {
+    if (!saved.has(key)) {
+      saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    }
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
+
+  beforeEach(() => {
+    storage = {};
+    // Simulate a browser host so the SDK's `isBrowser()` branches fire.
+    define('window', {});
+    define('document', {});
+    define('location', { href: 'https://example.com/checkout' });
+    define('navigator', { userAgent: 'Mozilla/5.0 (Test) Chrome/124.0.0.0' });
+    define('innerWidth', 1440);
+    define('innerHeight', 900);
+    define('sessionStorage', {
+      getItem: (k: string) => (k in storage ? storage[k]! : null),
+      setItem: (k: string, v: string) => {
+        storage[k] = v;
+      },
+      removeItem: (k: string) => {
+        delete storage[k];
+      },
+      clear: () => {
+        storage = {};
+      },
+      key: () => null,
+      length: 0,
+    } satisfies Storage);
+  });
+
+  afterEach(() => {
+    for (const [key, desc] of saved) {
+      if (desc) {
+        Object.defineProperty(globalThis, key, desc);
+      } else {
+        Object.defineProperty(globalThis, key, {
+          configurable: true,
+          value: undefined,
+        });
+      }
+    }
+    saved.clear();
+  });
+
+  // Regression for B-1: the browser SDK used to attach an `attributes` bag
+  // (page_url + viewport) to the session-start body. `SessionStartRequest` is
+  // `additionalProperties: false` with no `attributes`, so every real browser
+  // session/start failed with HTTP 400. The start body must now carry only
+  // contract-known top-level keys (and `client.userAgent` must still ride).
+  it('emits a session-start body with NO `attributes` bag (only contract keys)', async () => {
+    const fetchImpl = fetchMock(() => new Response('', { status: 202 }));
+    const client = createClient({
+      apiKey: 'rt_live_test_token',
+      endpoint: ENDPOINT,
+      transport: fetchImpl as unknown as typeof fetch,
+    });
+    client.track('page_view');
+    await client.flush();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const startCalls = getSessionStartCalls(fetchImpl);
+    expect(startCalls.length).toBe(1);
+    const body = read<{
+      sessionId: string;
+      startedAt: string;
+      client?: { userAgent?: string };
+      attributes?: unknown;
+    }>(startCalls[0]!);
+
+    // No `attributes` (or any other stray top-level key) — else the server's
+    // additionalProperties:false rejects the body with 400.
+    expect('attributes' in body).toBe(false);
+    expect(body.client?.userAgent).toBe('Mozilla/5.0 (Test) Chrome/124.0.0.0');
+    expect(Object.keys(body).sort()).toEqual(
+      ['client', 'sessionId', 'startedAt'].sort(),
+    );
+  });
+
+  // The `sessionAttributes` option is now a documented no-op on the wire; it
+  // must NOT reintroduce a session-start `attributes` bag.
+  it('does not emit `attributes` even when sessionAttributes() is set', async () => {
+    const fetchImpl = fetchMock(() => new Response('', { status: 202 }));
+    const client = createClient({
+      apiKey: 'rt_live_test_token',
+      endpoint: ENDPOINT,
+      transport: fetchImpl as unknown as typeof fetch,
+      sessionAttributes: () => ({ tenant: 'acme', plan: 'pro' }),
+    });
+    client.track('page_view');
+    await client.flush();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const body = read<{ attributes?: unknown }>(getSessionStartCalls(fetchImpl)[0]!);
+    expect('attributes' in body).toBe(false);
+  });
+
+  // Page context is relocated onto the `page_view` event under a camelCase
+  // `context` block (forward-compatible with the planned event context block).
+  it('enriches the `page_view` event with a page-context block', async () => {
+    const fetchImpl = fetchMock(() => new Response('', { status: 202 }));
+    const client = createClient({
+      apiKey: 'rt_live_test_token',
+      endpoint: ENDPOINT,
+      transport: fetchImpl as unknown as typeof fetch,
+    });
+    client.track('page_view', { trigger: 'load' });
+    await client.flush();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const eventsCalls = getEventsCalls(fetchImpl);
+    expect(eventsCalls.length).toBeGreaterThanOrEqual(1);
+    const batch = read<{
+      events: Array<{ type: string; attributes?: Record<string, unknown> }>;
+    }>(eventsCalls[0]!);
+    const pageView = batch.events.find((e) => e.type === 'page_view');
+    expect(pageView).toBeDefined();
+    expect(pageView!.attributes).toMatchObject({
+      trigger: 'load',
+      context: {
+        pageUrl: 'https://example.com/checkout',
+        viewportWidth: 1440,
+        viewportHeight: 900,
+      },
+    });
+  });
+
+  // A non-page event is left untouched by the enricher.
+  it('does not enrich non-page events with page context', async () => {
+    const fetchImpl = fetchMock(() => new Response('', { status: 202 }));
+    const client = createClient({
+      apiKey: 'rt_live_test_token',
+      endpoint: ENDPOINT,
+      transport: fetchImpl as unknown as typeof fetch,
+    });
+    client.track('demo.button_click', { button: 'x' });
+    await client.flush();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const batch = read<{
+      events: Array<{ type: string; attributes?: Record<string, unknown> }>;
+    }>(getEventsCalls(fetchImpl)[0]!);
+    const ev = batch.events.find((e) => e.type === 'demo.button_click');
+    expect(ev).toBeDefined();
+    expect(ev!.attributes && 'context' in ev!.attributes).toBe(false);
   });
 });

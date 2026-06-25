@@ -131,7 +131,6 @@ export interface SessionStartPayload {
   client?: {
     userAgent?: string;
   };
-  attributes?: Record<string, unknown>;
   identify?: {
     userId: string;
     traits?: Record<string, unknown>;
@@ -188,8 +187,13 @@ export interface ClientOptions {
    */
   autoSession?: boolean;
   /**
-   * Optional getter invoked on every session-start to populate
-   * `attributes` on the start payload. Called fresh per session.
+   * @deprecated No longer emitted on the wire. The `SessionStartRequest`
+   * contract is `additionalProperties: false` and carries no `attributes`
+   * field, so a session-start attribute bag is rejected with HTTP 400.
+   * Per-page context now rides on the `page_view` event (see the SDK's
+   * automatic page-context enrichment). A structured per-session `context`
+   * block is planned for a future contract revision; this option is retained
+   * for source compatibility but currently has no effect.
    */
   sessionAttributes?: () => Record<string, unknown>;
 }
