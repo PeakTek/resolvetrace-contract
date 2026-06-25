@@ -96,6 +96,15 @@ export const MIN_SESSION_TIMEOUT_MS = 1_000;
 /** Maximum frequency (ms) of sessionStorage flushes for `lastActivityAt`. */
 export const SESSION_STORAGE_FLUSH_INTERVAL_MS = 5_000;
 
+/** Auto-capture (browser-only) heuristic + bounding defaults (Wave-21). */
+export const DEFAULT_RAGE_CLICK_THRESHOLD = 3;
+export const DEFAULT_RAGE_CLICK_WINDOW_MS = 1_000;
+export const DEFAULT_DEAD_CLICK_WINDOW_MS = 2_500;
+export const DEFAULT_REPEATED_SUBMIT_THRESHOLD = 2;
+export const DEFAULT_REPEATED_SUBMIT_WINDOW_MS = 3_000;
+/** Per-session ceiling on auto-captured events (anti-flood). */
+export const DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION = 200;
+
 /** Allowed option keys on the public constructor. */
 export const ALLOWED_OPTION_KEYS: ReadonlySet<string> = new Set([
   'apiKey',
@@ -110,4 +119,19 @@ export const ALLOWED_OPTION_KEYS: ReadonlySet<string> = new Set([
   'sessionMaxDurationMs',
   'autoSession',
   'sessionAttributes',
+  'autoCapture',
+]);
+
+/** Allowed keys inside the `autoCapture` options object. */
+export const ALLOWED_AUTOCAPTURE_KEYS: ReadonlySet<string> = new Set([
+  'enabled',
+  'rageClick',
+  'deadClick',
+  'repeatedSubmit',
+  'rageClickThreshold',
+  'rageClickWindowMs',
+  'deadClickWindowMs',
+  'repeatedSubmitThreshold',
+  'repeatedSubmitWindowMs',
+  'maxEventsPerSession',
 ]);

@@ -230,6 +230,55 @@ export interface SessionUnknownErrorBody {
   message?: string;
 }
 
+/**
+ * Browser auto-capture configuration.
+ *
+ * Auto-capture is browser-only and ON by default in a browser runtime; outside
+ * a browser the installer is a no-op regardless of these values. Each signal
+ * can be opted out individually, or the whole subsystem disabled with
+ * `enabled: false`. Tunables let a host tighten/loosen the heuristics and the
+ * per-session volume ceiling. All emitted events still flow through the normal
+ * `capture()` pipeline (session, context enrichment, Stage-1 scrubber).
+ *
+ * A2 extends this shape with its own per-signal booleans + tunables for the
+ * error / network / perf breadcrumb sources; keep the same conventions
+ * (boolean flag named after the signal, tunables alongside).
+ */
+export interface AutoCaptureOptions {
+  /** Master switch. When false, nothing is installed. Default `true`. */
+  enabled?: boolean;
+
+  // --- Frustration signals (Wave-21 A1) ------------------------------------
+  /** Capture `ux.rage_click`. Default `true`. */
+  rageClick?: boolean;
+  /** Capture `ux.dead_click`. Default `true`. */
+  deadClick?: boolean;
+  /** Capture `ux.repeated_submit`. Default `true`. */
+  repeatedSubmit?: boolean;
+
+  // --- Heuristic tunables ---------------------------------------------------
+  /** Clicks on the same masked target to trigger a rage burst. Default `3`. */
+  rageClickThreshold?: number;
+  /** Window (ms) within which rage clicks must occur. Default `1000`. */
+  rageClickWindowMs?: number;
+  /**
+   * Window (ms) after a click with no DOM mutation / navigation / network
+   * before it is flagged as a dead click. Default `2500`.
+   */
+  deadClickWindowMs?: number;
+  /** Submits of the same form to trigger a repeated-submit signal. Default `2`. */
+  repeatedSubmitThreshold?: number;
+  /** Window (ms) within which repeated submits must occur. Default `3000`. */
+  repeatedSubmitWindowMs?: number;
+
+  // --- Bounding -------------------------------------------------------------
+  /**
+   * Hard ceiling on the number of auto-captured events emitted per session, so
+   * a pathological page cannot flood ingest. Default `200`.
+   */
+  maxEventsPerSession?: number;
+}
+
 /** Options accepted by the `ResolveTraceClient` constructor. */
 export interface ClientOptions {
   /** Opaque bearer token issued by the ResolveTrace control plane. */
@@ -274,6 +323,11 @@ export interface ClientOptions {
    * for source compatibility but currently has no effect.
    */
   sessionAttributes?: () => Record<string, unknown>;
+  /**
+   * Browser auto-capture configuration. Browser-only and ON by default in a
+   * browser runtime; no-op outside a browser. See `AutoCaptureOptions`.
+   */
+  autoCapture?: AutoCaptureOptions | boolean;
 }
 
 /** Options accepted by `client.flush()`. */

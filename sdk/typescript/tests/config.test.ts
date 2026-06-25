@@ -88,4 +88,70 @@ describe('resolveConfig', () => {
       resolveConfig({ ...OK, maskSelectors: 'not-an-array' as unknown as string[] }),
     ).toThrow(ConfigError);
   });
+
+  // --- autoCapture --------------------------------------------------------
+  describe('autoCapture', () => {
+    it('defaults everything on with documented defaults', () => {
+      const cfg = resolveConfig(OK);
+      expect(cfg.autoCapture).toEqual({
+        enabled: true,
+        rageClick: true,
+        deadClick: true,
+        repeatedSubmit: true,
+        rageClickThreshold: 3,
+        rageClickWindowMs: 1000,
+        deadClickWindowMs: 2500,
+        repeatedSubmitThreshold: 2,
+        repeatedSubmitWindowMs: 3000,
+        maxEventsPerSession: 200,
+      });
+    });
+
+    it('accepts a boolean master switch', () => {
+      expect(resolveConfig({ ...OK, autoCapture: false }).autoCapture.enabled).toBe(false);
+      expect(resolveConfig({ ...OK, autoCapture: true }).autoCapture.enabled).toBe(true);
+    });
+
+    it('accepts per-signal opt-out + tunables', () => {
+      const cfg = resolveConfig({
+        ...OK,
+        autoCapture: {
+          rageClick: false,
+          rageClickThreshold: 5,
+          maxEventsPerSession: 10,
+        },
+      });
+      expect(cfg.autoCapture.rageClick).toBe(false);
+      expect(cfg.autoCapture.deadClick).toBe(true);
+      expect(cfg.autoCapture.rageClickThreshold).toBe(5);
+      expect(cfg.autoCapture.maxEventsPerSession).toBe(10);
+    });
+
+    it('rejects unknown autoCapture keys', () => {
+      expect(() =>
+        resolveConfig({ ...OK, autoCapture: { bogus: true } as unknown as object }),
+      ).toThrow(ConfigError);
+    });
+
+    it('rejects non-positive / non-integer tunables', () => {
+      expect(() =>
+        resolveConfig({ ...OK, autoCapture: { rageClickThreshold: 0 } }),
+      ).toThrow(ConfigError);
+      expect(() =>
+        resolveConfig({ ...OK, autoCapture: { rageClickWindowMs: -5 } }),
+      ).toThrow(ConfigError);
+      expect(() =>
+        resolveConfig({ ...OK, autoCapture: { maxEventsPerSession: 1.5 } }),
+      ).toThrow(ConfigError);
+    });
+
+    it('rejects non-boolean per-signal flags', () => {
+      expect(() =>
+        resolveConfig({
+          ...OK,
+          autoCapture: { deadClick: 'yes' as unknown as boolean },
+        }),
+      ).toThrow(ConfigError);
+    });
+  });
 });

@@ -7,7 +7,14 @@
  */
 
 import {
+  ALLOWED_AUTOCAPTURE_KEYS,
   ALLOWED_OPTION_KEYS,
+  DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION,
+  DEFAULT_DEAD_CLICK_WINDOW_MS,
+  DEFAULT_RAGE_CLICK_THRESHOLD,
+  DEFAULT_RAGE_CLICK_WINDOW_MS,
+  DEFAULT_REPEATED_SUBMIT_THRESHOLD,
+  DEFAULT_REPEATED_SUBMIT_WINDOW_MS,
   DEFAULT_SESSION_INACTIVITY_MS,
   DEFAULT_SESSION_MAX_DURATION_MS,
   MAX_API_KEY_BYTES,
@@ -15,6 +22,20 @@ import {
 } from './constants.js';
 import { ConfigError } from './errors.js';
 import type { ClientOptions } from './types.js';
+
+/** Fully-resolved, validated auto-capture configuration (browser-only). */
+export interface ResolvedAutoCaptureConfig {
+  enabled: boolean;
+  rageClick: boolean;
+  deadClick: boolean;
+  repeatedSubmit: boolean;
+  rageClickThreshold: number;
+  rageClickWindowMs: number;
+  deadClickWindowMs: number;
+  repeatedSubmitThreshold: number;
+  repeatedSubmitWindowMs: number;
+  maxEventsPerSession: number;
+}
 
 /** Normalized, validated options used internally. */
 export interface ResolvedConfig {
@@ -31,6 +52,7 @@ export interface ResolvedConfig {
   sessionMaxDurationMs: number;
   autoSession: boolean;
   sessionAttributes: (() => Record<string, unknown>) | undefined;
+  autoCapture: ResolvedAutoCaptureConfig;
 }
 
 /** Hosts that are allowed to use `http://` (dev / loopback). */
@@ -65,6 +87,125 @@ function utf8ByteLength(s: string): number {
     } else n += 3;
   }
   return n;
+}
+
+/** Validate a positive-integer tunable, falling back to a default. */
+function resolvePositiveInt(
+  raw: unknown,
+  fallback: number,
+  label: string,
+): number {
+  if (raw === undefined) return fallback;
+  if (
+    typeof raw !== 'number' ||
+    !Number.isFinite(raw) ||
+    !Number.isInteger(raw) ||
+    raw <= 0
+  ) {
+    throw new ConfigError(
+      'config.invalid',
+      `\`autoCapture.${label}\` must be a positive integer.`,
+    );
+  }
+  return raw;
+}
+
+/** Validate a boolean tunable, falling back to a default. */
+function resolveBool(raw: unknown, fallback: boolean, label: string): boolean {
+  if (raw === undefined) return fallback;
+  if (typeof raw !== 'boolean') {
+    throw new ConfigError(
+      'config.invalid',
+      `\`autoCapture.${label}\` must be a boolean if provided.`,
+    );
+  }
+  return raw;
+}
+
+/**
+ * Validate + normalize the `autoCapture` option. Accepts:
+ *   - `undefined`  → everything on (browser-gated at install time).
+ *   - `true`/`false` → master switch, all defaults otherwise.
+ *   - an options object → per-key validation (rejects unknown keys, like the
+ *     top-level option allow-list).
+ */
+function resolveAutoCapture(raw: unknown): ResolvedAutoCaptureConfig {
+  const defaults: ResolvedAutoCaptureConfig = {
+    enabled: true,
+    rageClick: true,
+    deadClick: true,
+    repeatedSubmit: true,
+    rageClickThreshold: DEFAULT_RAGE_CLICK_THRESHOLD,
+    rageClickWindowMs: DEFAULT_RAGE_CLICK_WINDOW_MS,
+    deadClickWindowMs: DEFAULT_DEAD_CLICK_WINDOW_MS,
+    repeatedSubmitThreshold: DEFAULT_REPEATED_SUBMIT_THRESHOLD,
+    repeatedSubmitWindowMs: DEFAULT_REPEATED_SUBMIT_WINDOW_MS,
+    maxEventsPerSession: DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION,
+  };
+
+  if (raw === undefined) return defaults;
+  if (typeof raw === 'boolean') return { ...defaults, enabled: raw };
+  if (raw === null || typeof raw !== 'object') {
+    throw new ConfigError(
+      'config.invalid',
+      '`autoCapture` must be a boolean or an options object if provided.',
+    );
+  }
+
+  const opts = raw as Record<string, unknown>;
+  for (const key of Object.keys(opts)) {
+    if (!ALLOWED_AUTOCAPTURE_KEYS.has(key)) {
+      throw new ConfigError(
+        'config.invalid',
+        `Unknown autoCapture option: "${key}". Allowed: ${Array.from(
+          ALLOWED_AUTOCAPTURE_KEYS,
+        )
+          .sort()
+          .join(', ')}.`,
+      );
+    }
+  }
+
+  return {
+    enabled: resolveBool(opts.enabled, defaults.enabled, 'enabled'),
+    rageClick: resolveBool(opts.rageClick, defaults.rageClick, 'rageClick'),
+    deadClick: resolveBool(opts.deadClick, defaults.deadClick, 'deadClick'),
+    repeatedSubmit: resolveBool(
+      opts.repeatedSubmit,
+      defaults.repeatedSubmit,
+      'repeatedSubmit',
+    ),
+    rageClickThreshold: resolvePositiveInt(
+      opts.rageClickThreshold,
+      defaults.rageClickThreshold,
+      'rageClickThreshold',
+    ),
+    rageClickWindowMs: resolvePositiveInt(
+      opts.rageClickWindowMs,
+      defaults.rageClickWindowMs,
+      'rageClickWindowMs',
+    ),
+    deadClickWindowMs: resolvePositiveInt(
+      opts.deadClickWindowMs,
+      defaults.deadClickWindowMs,
+      'deadClickWindowMs',
+    ),
+    repeatedSubmitThreshold: resolvePositiveInt(
+      opts.repeatedSubmitThreshold,
+      defaults.repeatedSubmitThreshold,
+      'repeatedSubmitThreshold',
+    ),
+    repeatedSubmitWindowMs: resolvePositiveInt(
+      opts.repeatedSubmitWindowMs,
+      defaults.repeatedSubmitWindowMs,
+      'repeatedSubmitWindowMs',
+    ),
+    maxEventsPerSession: resolvePositiveInt(
+      opts.maxEventsPerSession,
+      defaults.maxEventsPerSession,
+      'maxEventsPerSession',
+    ),
+  };
 }
 
 export function resolveConfig(input: unknown): ResolvedConfig {
@@ -228,6 +369,9 @@ export function resolveConfig(input: unknown): ResolvedConfig {
   }
   const autoSession = autoSessionRaw === undefined ? true : autoSessionRaw;
 
+  // autoCapture ---------------------------------------------------------
+  const autoCapture = resolveAutoCapture(opts.autoCapture);
+
   // sessionAttributes ---------------------------------------------------
   const sessionAttributesRaw = opts.sessionAttributes;
   if (
@@ -256,6 +400,7 @@ export function resolveConfig(input: unknown): ResolvedConfig {
     sessionAttributes: sessionAttributesRaw as
       | (() => Record<string, unknown>)
       | undefined,
+    autoCapture,
   };
 }
 

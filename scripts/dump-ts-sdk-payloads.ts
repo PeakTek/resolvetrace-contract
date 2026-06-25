@@ -167,23 +167,120 @@ interface BrowserGlobals {
   innerHeight: number;
 }
 
+// --- Minimal interactive DOM for auto-capture scenarios --------------------
+//
+// The browser auto-capture sources register capture-phase `click` / `submit`
+// listeners and a `MutationObserver`. To exercise them end-to-end (so the
+// emitted `ux.*` wire payloads are captured + schema-validated), the dumper
+// provides a tiny DOM that supports just enough: elements with attributes, a
+// dispatchable document, and a fireable MutationObserver. Real `setTimeout`
+// drives the dead-click window.
+
+interface DumperListener {
+  type: string;
+  handler: (ev: { type: string; target: DumperElement | null }) => void;
+}
+
+class DumperElement {
+  tagName: string;
+  parentElement: DumperElement | null = null;
+  className = '';
+  private readonly attrs = new Map<string, string>();
+  constructor(tag: string, attrs: Record<string, string> = {}) {
+    this.tagName = tag.toUpperCase();
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') this.className = v;
+      else this.attrs.set(k, v);
+    }
+  }
+  getAttribute(n: string): string | null {
+    return this.attrs.has(n) ? this.attrs.get(n)! : null;
+  }
+  hasAttribute(n: string): boolean {
+    return this.attrs.has(n);
+  }
+  matches(): boolean {
+    return false;
+  }
+  get attributes(): {
+    length: number;
+    item(i: number): { name: string; value: string } | null;
+  } {
+    const e = Array.from(this.attrs.entries());
+    return {
+      length: e.length,
+      item: (i: number) => (e[i] ? { name: e[i]![0], value: e[i]![1] } : null),
+    };
+  }
+}
+
+class DumperDocument {
+  body = new DumperElement('BODY');
+  documentElement = new DumperElement('HTML');
+  private listeners: DumperListener[] = [];
+  addEventListener(
+    type: string,
+    handler: DumperListener['handler'],
+  ): void {
+    this.listeners.push({ type, handler });
+  }
+  removeEventListener(type: string, handler: DumperListener['handler']): void {
+    this.listeners = this.listeners.filter(
+      (l) => !(l.type === type && l.handler === handler),
+    );
+  }
+  dispatch(type: string, target: DumperElement | null): void {
+    for (const l of [...this.listeners]) {
+      if (l.type === type) l.handler({ type, target });
+    }
+  }
+}
+
+let dumperMutationCb: (() => void) | null = null;
+class DumperMutationObserver {
+  constructor(cb: () => void) {
+    dumperMutationCb = cb;
+  }
+  observe(): void {
+    /* no-op */
+  }
+  disconnect(): void {
+    dumperMutationCb = null;
+  }
+}
+
+interface BrowserHandles {
+  document: DumperDocument;
+  window: { location: { href: string } };
+}
+
 /**
  * Define the browser globals the SDK probes (`window`, `document`, `location`,
- * `navigator`, `innerWidth`, `innerHeight`, plus a no-op `sessionStorage`) and
- * return a function that restores the previous descriptors. Without these,
- * `isBrowser()` is false under node and the SDK never enters its browser-only
- * branches (UA lift on session-start, page-context enrichment on `page_view`)
- * — the exact blind spot that let a browser-only session-start defect ship.
+ * `navigator`, `innerWidth`, `innerHeight`, plus a no-op `sessionStorage` and a
+ * fireable `MutationObserver`) and return the live handles plus a restore fn.
+ * Without these, `isBrowser()` is false under node and the SDK never enters its
+ * browser-only branches (UA lift on session-start, page-context enrichment on
+ * `page_view`, and the auto-capture install) — the exact blind spot that let a
+ * browser-only session-start defect ship.
  */
-function installBrowserGlobals(g: BrowserGlobals): () => void {
+function installBrowserGlobals(g: BrowserGlobals): {
+  restore: () => void;
+  handles: BrowserHandles;
+} {
   const store = new Map<string, string>();
-  const values: Record<string, unknown> = {
-    window: {},
-    document: {},
+  const doc = new DumperDocument();
+  const win = {
     location: { href: g.href },
+    MutationObserver: DumperMutationObserver,
+  };
+  const values: Record<string, unknown> = {
+    window: win,
+    document: doc,
+    location: win.location,
     navigator: { userAgent: g.userAgent },
     innerWidth: g.innerWidth,
     innerHeight: g.innerHeight,
+    MutationObserver: DumperMutationObserver,
     sessionStorage: {
       getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
       setItem: (k: string, v: string) => {
@@ -202,7 +299,7 @@ function installBrowserGlobals(g: BrowserGlobals): () => void {
     saved.push([key, Object.getOwnPropertyDescriptor(globalThis, key)]);
     Object.defineProperty(globalThis, key, { configurable: true, value });
   }
-  return () => {
+  const restore = () => {
     for (const [key, desc] of saved) {
       if (desc) {
         Object.defineProperty(globalThis, key, desc);
@@ -214,6 +311,7 @@ function installBrowserGlobals(g: BrowserGlobals): () => void {
       }
     }
   };
+  return { restore, handles: { document: doc, window: win } };
 }
 
 /**
@@ -229,9 +327,9 @@ function installBrowserGlobals(g: BrowserGlobals): () => void {
  */
 async function runBrowserScenario(
   id: string,
-  drive: (client: ResolveTraceClient) => Promise<void>,
+  drive: (client: ResolveTraceClient, handles: BrowserHandles) => Promise<void>,
 ): Promise<Capture[]> {
-  const restore = installBrowserGlobals({
+  const { restore, handles } = installBrowserGlobals({
     href: 'https://example.com/checkout',
     userAgent:
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
@@ -242,9 +340,11 @@ async function runBrowserScenario(
   try {
     const captures: Capture[] = [];
     const scenario = { current: id };
+    // The client installs auto-capture in its constructor (browser-gated), so
+    // the listeners are live for the duration of `drive`.
     const client = makeClient(captures, scenario);
     try {
-      await drive(client);
+      await drive(client, handles);
     } finally {
       await settle(client);
     }
@@ -252,6 +352,17 @@ async function runBrowserScenario(
   } finally {
     restore();
   }
+}
+
+/** Helper: append an element under the document body. */
+function el(
+  handles: BrowserHandles,
+  tag: string,
+  attrs: Record<string, string> = {},
+): DumperElement {
+  const e = new DumperElement(tag, attrs);
+  e.parentElement = handles.document.body;
+  return e;
 }
 
 async function main(): Promise<void> {
@@ -344,6 +455,61 @@ async function main(): Promise<void> {
       await runBrowserScenario('browser-page-view', async (client) => {
         client.track('page_view');
       }),
+    ),
+  );
+
+  // Scenario 7: autocapture-rage-click
+  //   - Three rapid clicks on the same interactive target trigger one
+  //     `ux.rage_click` emitted through the real auto-capture listener.
+  // Expected captures (post-filter):
+  //   POST /v1/session/start, POST /v1/events (ux.rage_click, severity warn)
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario(
+        'autocapture-rage-click',
+        async (client, handles) => {
+          // Lazy-start the session so events carry a sessionId.
+          client.capture({ type: 'view.start' });
+          const btn = el(handles, 'button', { id: 'submit-order' });
+          handles.document.dispatch('click', btn);
+          handles.document.dispatch('click', btn);
+          handles.document.dispatch('click', btn);
+        },
+      ),
+    ),
+  );
+
+  // Scenario 8: autocapture-repeated-submit
+  //   - Two submits of the same form trigger one `ux.repeated_submit`.
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario(
+        'autocapture-repeated-submit',
+        async (client, handles) => {
+          client.capture({ type: 'view.start' });
+          const form = el(handles, 'form', { id: 'login', name: 'login' });
+          handles.document.dispatch('submit', form);
+          handles.document.dispatch('submit', form);
+        },
+      ),
+    ),
+  );
+
+  // Scenario 9: autocapture-dead-click
+  //   - One click on an interactive target with no DOM mutation / nav within
+  //     the (short, test-tuned) window triggers one `ux.dead_click`.
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario(
+        'autocapture-dead-click',
+        async (client, handles) => {
+          client.capture({ type: 'view.start' });
+          const btn = el(handles, 'button', { id: 'dead' });
+          handles.document.dispatch('click', btn);
+          // Wait out the dead-click window (default 2500ms) with no effect.
+          await new Promise((r) => setTimeout(r, 2700));
+        },
+      ),
     ),
   );
 

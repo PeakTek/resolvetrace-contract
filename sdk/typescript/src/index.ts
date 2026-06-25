@@ -29,6 +29,7 @@ export type { ResolveTraceErrorCode } from './errors.js';
 export type {
   ActorIdentity,
   AttributeValue,
+  AutoCaptureOptions,
   ClientOptions,
   Diagnostics,
   DiagnosticsLevel,
@@ -56,3 +57,21 @@ export type {
 } from './types.js';
 export { generateUlid, isUlid } from './ulid.js';
 export { EVENT_TYPES, SCHEMA_VERSION, SDK_NAME, SDK_VERSION } from './constants.js';
+// Auto-capture framework surface (browser-only). A2 reuses the masked-selector
+// helper for breadcrumb target descriptors and the `CaptureSource` contract to
+// register error/network/perf sources.
+export {
+  AutoCapture,
+  defaultSources,
+  describeTarget,
+  describeForm,
+  isInteractiveTarget,
+  isMaskedTarget,
+  MASKED_TOKEN,
+} from './autocapture/index.js';
+export type {
+  AutoCaptureDeps,
+  CaptureContext,
+  CaptureSource,
+  Teardown,
+} from './autocapture/index.js';

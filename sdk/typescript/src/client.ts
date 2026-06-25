@@ -6,6 +6,7 @@
  * for the supported surface.
  */
 
+import { AutoCapture } from './autocapture/index.js';
 import { resolveConfig } from './config.js';
 import type { ResolvedConfig } from './config.js';
 import { buildEnvelope } from './envelope.js';
@@ -120,6 +121,9 @@ export class ResolveTraceClient {
   private readonly transport: Transport;
   private readonly identityState: IdentityState;
   private readonly sessionManager: SessionManager;
+  private readonly autoCapture: AutoCapture;
+  /** Last session id seen by `capture()`, used to reset the auto-capture ceiling. */
+  private lastSeenSessionId: Ulid | null = null;
 
   /** Public session controls. */
   public readonly session: {
@@ -150,6 +154,17 @@ export class ResolveTraceClient {
       await this.sessionManager.issueStart();
     });
 
+    // Browser auto-capture (frustration signals; A2 adds error/network/perf).
+    // Emits through `capture()` so scrubbing/session/context all apply. The
+    // installer is a no-op outside a browser or when disabled.
+    this.autoCapture = new AutoCapture({
+      config: this.config,
+      emit: (event) => {
+        this.capture(event);
+      },
+      reportError: this.config.onError,
+    });
+
     const mgr = this.sessionManager;
     this.session = Object.defineProperties({} as ResolveTraceClient['session'], {
       id: {
@@ -165,6 +180,20 @@ export class ResolveTraceClient {
         value: () => mgr.restart(),
       },
     });
+
+    // Install auto-capture last, once the client is fully wired. Browser-only;
+    // no-op otherwise. Never throws into the constructor.
+    try {
+      this.autoCapture.install();
+    } catch (err) {
+      if (this.config.onError) {
+        try {
+          this.config.onError(err instanceof Error ? err : new Error(String(err)));
+        } catch {
+          /* swallow */
+        }
+      }
+    }
   }
 
   /**
@@ -195,6 +224,13 @@ export class ResolveTraceClient {
       throw err;
     }
     this.sessionManager.noteActivity();
+
+    // A new session rolled (or first start) → reset the per-session ceiling so
+    // auto-capture volume is bounded per session, not per process.
+    if (sessionId !== this.lastSeenSessionId) {
+      this.lastSeenSessionId = sessionId;
+      this.autoCapture.resetSessionBudget();
+    }
 
     const actor = this.identityState.toActor();
     const envelope = buildEnvelope(
@@ -249,6 +285,13 @@ export class ResolveTraceClient {
    * calls are dropped and `getDiagnostics()` reflects the drop count.
    */
   async shutdown(opts: ShutdownOptions = {}): Promise<void> {
+    // Tear down browser auto-capture first so no late listener fires during
+    // the final flush. Idempotent + never throws.
+    try {
+      this.autoCapture.shutdown();
+    } catch {
+      /* swallow — teardown must never break shutdown */
+    }
     await this.transport.shutdown(opts);
     await this.sessionManager.shutdown(opts.timeoutMs);
   }
