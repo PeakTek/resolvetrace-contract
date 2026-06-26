@@ -21,7 +21,13 @@ import {
   MAX_API_KEY_BYTES,
   MIN_SESSION_TIMEOUT_MS,
 } from './constants.js';
+import { ALLOWED_REPLAY_KEYS } from './constants.js';
 import { ConfigError } from './errors.js';
+import {
+  defaultReplayConfig,
+  resolveReplayConfig,
+} from './autocapture/replay/policy.js';
+import type { ResolvedReplayConfig } from './autocapture/replay/policy.js';
 import type { ClientOptions } from './types.js';
 
 /** Fully-resolved, validated auto-capture configuration (browser-only). */
@@ -44,6 +50,8 @@ export interface ResolvedAutoCaptureConfig {
   /** HTTP status at or above which a network breadcrumb is an `error.api`. */
   errorStatusThreshold: number;
   maxEventsPerSession: number;
+  /** Masked replay (rrweb) capture policy (browser-only; off by default). */
+  replay: ResolvedReplayConfig;
 }
 
 /** Normalized, validated options used internally. */
@@ -156,6 +164,7 @@ function resolveAutoCapture(raw: unknown): ResolvedAutoCaptureConfig {
     repeatedSubmitWindowMs: DEFAULT_REPEATED_SUBMIT_WINDOW_MS,
     errorStatusThreshold: DEFAULT_ERROR_STATUS_THRESHOLD,
     maxEventsPerSession: DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION,
+    replay: defaultReplayConfig(),
   };
 
   if (raw === undefined) return defaults;
@@ -234,6 +243,7 @@ function resolveAutoCapture(raw: unknown): ResolvedAutoCaptureConfig {
       defaults.maxEventsPerSession,
       'maxEventsPerSession',
     ),
+    replay: resolveReplayConfig(opts.replay, ALLOWED_REPLAY_KEYS),
   };
 }
 

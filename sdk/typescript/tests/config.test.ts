@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveConfig } from '../src/config.js';
 import { ConfigError } from '../src/errors.js';
+import { defaultReplayConfig } from '../src/autocapture/replay/policy.js';
 
 const OK = {
   apiKey: 'rt_live_test_token',
@@ -110,7 +111,29 @@ describe('resolveConfig', () => {
         repeatedSubmitWindowMs: 3000,
         errorStatusThreshold: 400,
         maxEventsPerSession: 200,
+        // Masked replay (Wave-24): off by default, masking on.
+        replay: defaultReplayConfig(),
       });
+    });
+
+    it('replay defaults to disabled + masked, and accepts a policy', () => {
+      const off = resolveConfig(OK).autoCapture.replay;
+      expect(off.enabled).toBe(false);
+      expect(off.masking.maskAllInputs).toBe(true);
+      const on = resolveConfig({
+        ...OK,
+        autoCapture: { replay: { enabled: true, sampleRate: 0.25, denyRoutes: ['/admin'] } },
+      }).autoCapture.replay;
+      expect(on.enabled).toBe(true);
+      expect(on.sampleRate).toBe(0.25);
+      expect(on.denyRoutes).toEqual(['/admin']);
+      expect(on.masking.maskAllInputs).toBe(true);
+    });
+
+    it('rejects an unknown autoCapture.replay key', () => {
+      expect(() =>
+        resolveConfig({ ...OK, autoCapture: { replay: { bogus: true } } }),
+      ).toThrow(ConfigError);
     });
 
     it('accepts a boolean master switch', () => {

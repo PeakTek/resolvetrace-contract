@@ -57,6 +57,14 @@ const PATH_SCHEMA: Record<string, PathMapping> = {
     schemaFile: 'session.json',
     definitionName: 'SessionEndRequest',
   },
+  '/v1/replay/signed-url': {
+    schemaFile: 'replay.json',
+    definitionName: 'ReplaySignedUrlRequest',
+  },
+  '/v1/replay/complete': {
+    schemaFile: 'replay.json',
+    definitionName: 'ReplayManifestRequest',
+  },
 };
 
 interface CapturedPayload {

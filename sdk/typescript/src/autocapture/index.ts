@@ -18,7 +18,9 @@
 
 import type { ResolvedConfig } from '../config.js';
 import { isBrowser } from '../runtime.js';
-import type { EventInput } from '../types.js';
+import type { DiagnosticsLevel, EventInput } from '../types.js';
+import { ReplayRecorder } from './replay/index.js';
+import type { ReplayPolicyProvider, RrwebRecordFn } from './replay/index.js';
 import { createApiSource } from './api.js';
 import { createDeadClickSource } from './dead-click.js';
 import { createErrorJsSource } from './error-js.js';
@@ -65,6 +67,19 @@ export interface AutoCaptureDeps {
   reportError?(err: Error): void;
   /** Optional override of the source list (tests / A2 composition). */
   sources?: CaptureSource[];
+  /**
+   * fetch implementation for the replay upload transport. The client resolves
+   * this from its config / global fetch and passes it through.
+   */
+  fetchImpl?: typeof fetch;
+  /** Resolve the current diagnostics level (for replay level-gating). */
+  currentDiagnosticsLevel?(): DiagnosticsLevel | undefined;
+  /** Resolve the current route name (for the replay deny-list). */
+  currentRoute?(): string | undefined;
+  /** Documented tenant-settings policy hook for replay (Wave-24 A2 source). */
+  replayPolicyProvider?: ReplayPolicyProvider;
+  /** rrweb `record` override (tests). */
+  rrwebRecord?: RrwebRecordFn;
 }
 
 export class AutoCapture {
@@ -74,6 +89,10 @@ export class AutoCapture {
   private installed = false;
   /** Auto-captured events emitted this session (against the ceiling). */
   private emittedCount = 0;
+  /** Masked replay (rrweb) recorder; created on install in a browser. */
+  private replay: ReplayRecorder | null = null;
+  /** Session currently handed to the replay recorder. */
+  private replaySessionId: string | null = null;
 
   constructor(deps: AutoCaptureDeps) {
     this.deps = deps;
@@ -121,7 +140,48 @@ export class AutoCapture {
         this.report(err);
       }
     }
+
+    // Masked replay recorder (browser-only; started per session). Built even
+    // when the policy is disabled so a tenant-settings hook can enable it
+    // later; `start()` re-checks the full gate (enabled/level/deny/sampling).
+    try {
+      const fetchImpl = this.deps.fetchImpl;
+      if (fetchImpl) {
+        this.replay = new ReplayRecorder({
+          config: ac.replay,
+          endpointUrl: this.deps.config.endpointUrl,
+          apiKey: this.deps.config.apiKey,
+          fetchImpl,
+          currentDiagnosticsLevel: this.deps.currentDiagnosticsLevel,
+          currentRoute: this.deps.currentRoute,
+          policyProvider: this.deps.replayPolicyProvider,
+          rrwebRecord: this.deps.rrwebRecord,
+          reportError: this.deps.reportError,
+        });
+      }
+    } catch (err) {
+      this.report(err);
+    }
+
     this.installed = true;
+  }
+
+  /**
+   * Notify auto-capture that the active session changed. Drives the replay
+   * recorder lifecycle: stop the old session's recording and start the new
+   * one (subject to the policy gate). No-op when replay is unavailable.
+   * Fire-and-forget; never throws.
+   */
+  onSessionChanged(sessionId: string): void {
+    if (!this.replay) return;
+    if (this.replaySessionId === sessionId) return;
+    try {
+      if (this.replay.isRecording) this.replay.stop();
+      this.replaySessionId = sessionId;
+      void this.replay.start(sessionId).catch((err) => this.report(err));
+    } catch (err) {
+      this.report(err);
+    }
   }
 
   /** Tear down every installed source. Idempotent; never throws. */
@@ -134,7 +194,20 @@ export class AutoCapture {
       }
     }
     this.teardowns = [];
+    // Stop + flush the replay recorder so the final partial chunk uploads.
+    try {
+      this.replay?.stop();
+    } catch (err) {
+      this.report(err);
+    }
+    this.replay = null;
+    this.replaySessionId = null;
     this.installed = false;
+  }
+
+  /** Test/observability hook: the live replay recorder, if any. */
+  getReplayRecorder(): ReplayRecorder | null {
+    return this.replay;
   }
 
   /**

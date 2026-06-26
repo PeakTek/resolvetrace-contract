@@ -169,6 +169,16 @@ export class ResolveTraceClient {
         this.capture(event);
       },
       reportError: this.config.onError,
+      // Replay (rrweb) upload transport + policy resolvers (browser-only).
+      fetchImpl,
+      currentRoute: () => {
+        const loc = (globalThis as { location?: { pathname?: string } }).location;
+        return typeof loc?.pathname === 'string' ? loc.pathname : undefined;
+      },
+      // No SDK-level diagnostics source today: returning undefined lets the
+      // replay policy's own `minDiagnosticsLevel` default govern (A2's tenant
+      // settings hook supplies the real level later).
+      currentDiagnosticsLevel: () => undefined,
     });
 
     const mgr = this.sessionManager;
@@ -240,6 +250,9 @@ export class ResolveTraceClient {
     if (sessionId !== this.lastSeenSessionId) {
       this.lastSeenSessionId = sessionId;
       this.autoCapture.resetSessionBudget();
+      // Drive masked-replay capture to follow the session lifecycle (browser-
+      // only; the recorder re-checks the full policy gate). Fire-and-forget.
+      this.autoCapture.onSessionChanged(sessionId);
     }
 
     const actor = this.identityState.toActor();

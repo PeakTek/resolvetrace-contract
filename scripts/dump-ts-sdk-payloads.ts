@@ -25,6 +25,11 @@
 // script so dist/ is always current.
 import { createClient } from '../sdk/typescript/dist/client.js';
 import type { ResolveTraceClient } from '../sdk/typescript/dist/client.js';
+import {
+  ReplayChunker,
+  ReplayTransport,
+} from '../sdk/typescript/dist/autocapture/replay/index.js';
+import { generateUlid } from '../sdk/typescript/dist/ulid.js';
 
 const SDK_ENDPOINT = 'https://ingest.example.com';
 const SDK_API_KEY = 'rt_test_dumper_token';
@@ -70,6 +75,36 @@ function makeRecordingFetch(
     }
 
     captures.push({ scenario: scenario.current, path, body });
+
+    // Replay 3-leg flow: serve a signed-url response for the first leg, and a
+    // bare 200/201 for the PUT (to the blob host) and the complete leg.
+    if (path === '/v1/replay/signed-url') {
+      return new Response(
+        JSON.stringify({
+          uploadUrl: 'https://blob.example.com/upload/replay-chunk',
+          key: 'replay/session/seq-0.rrweb',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          maxBytes: 3145728,
+          requiredHeaders: { 'x-amz-meta-seq': '0' },
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    if (path === '/v1/replay/complete') {
+      return new Response(
+        JSON.stringify({
+          sessionId:
+            (body as { sessionId?: string } | null)?.sessionId ?? '',
+          sequence: (body as { sequence?: number } | null)?.sequence ?? 0,
+          acceptedAt: new Date().toISOString(),
+          durable: true,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    if (url.hostname === 'blob.example.com') {
+      return new Response(null, { status: 200 });
+    }
 
     // The events endpoint expects a JSON success body; sessions endpoints
     // accept an empty body. Returning the events shape unconditionally is
@@ -721,6 +756,40 @@ async function main(): Promise<void> {
       ),
     ),
   );
+
+  // Scenario 15: replay-upload
+  //   - Drive the replay 3-leg upload directly (signed-url → PUT → complete) so
+  //     the `ReplaySignedUrlRequest` + `ReplayManifestRequest` wire bodies are
+  //     captured and schema-validated against replay.json. rrweb itself is not
+  //     exercised here (it needs a real browser — see the smoke-test); we feed
+  //     the chunker a synthetic rrweb event so the produced chunk + manifest are
+  //     real SDK output.
+  {
+    const captures: Capture[] = [];
+    const scenario = { current: 'replay-upload' };
+    const fetchImpl = makeRecordingFetch(captures, scenario);
+    const sessionId = generateUlid();
+    const chunker = new ReplayChunker({ sessionId });
+    chunker.add({ type: 2, data: { node: { id: 1, tagName: 'form' } } });
+    const chunk = chunker.flush();
+    if (chunk) {
+      const transport = new ReplayTransport({
+        endpointUrl: new URL(SDK_ENDPOINT),
+        apiKey: SDK_API_KEY,
+        fetchImpl,
+        scrubber: {
+          version: 'sdk@0.1.0',
+          rulesDigest: `sha256:${'0'.repeat(64)}`,
+          applied: ['replay:rrweb', 'replay:maskAllInputs'],
+          budgetExceeded: false,
+        },
+      });
+      await transport.upload(sessionId, chunk);
+    }
+    // Only the contract-relevant legs (signed-url + complete) are validated; the
+    // PUT to the blob host has no schema and is not captured under a /v1 path.
+    all.push(...captures.filter((c) => c.path.startsWith('/v1/replay/')));
+  }
 
   // Emit each capture as one JSON Lines record on stdout. The validator reads
   // this stream line-by-line; the format is also human-greppable when a CI

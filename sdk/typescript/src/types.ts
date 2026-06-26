@@ -320,6 +320,41 @@ export interface AutoCaptureOptions {
    * a pathological page cannot flood ingest. Default `200`.
    */
   maxEventsPerSession?: number;
+
+  // --- Masked replay (Wave-24, browser-only) -------------------------------
+  /**
+   * Masked session replay (rrweb) capture policy. Browser-only and **off by
+   * default**; tenant settings are the eventual source of truth (the SDK
+   * accepts a policy via config for now). Masking is **on by default** and
+   * cannot be disabled — the options below only *extend* coverage.
+   *
+   *   - `true`  → enable with the default masked policy;
+   *   - object  → fine-grained policy (see `ReplayOptions`).
+   */
+  replay?: ReplayOptions | boolean;
+}
+
+/**
+ * Masked replay (rrweb) capture policy (browser-only).
+ *
+ * Replay is the richest auto-capture signal, so it is gated by an explicit
+ * multi-layer policy and masks on by default. A misconfigured tenant cannot
+ * capture raw: `maskTextSelector` / `blockSelector` only *extend* the masking
+ * floor, and there is no switch to disable input/text/attribute masking.
+ */
+export interface ReplayOptions {
+  /** Master switch. Default `false`. */
+  enabled?: boolean;
+  /** Fraction of eligible sessions to record, in [0, 1]. Default `0`. */
+  sampleRate?: number;
+  /** Route names / path prefixes on which replay must NOT record. */
+  denyRoutes?: string[];
+  /** Minimum diagnostics level required to record. Default `'standard'`. */
+  minDiagnosticsLevel?: DiagnosticsLevel;
+  /** Extra text-mask selector, unioned with the default `'*'`. */
+  maskTextSelector?: string;
+  /** Extra block selector, unioned with `[data-rt-mask],[data-private]`. */
+  blockSelector?: string;
 }
 
 /** Options accepted by the `ResolveTraceClient` constructor. */

@@ -96,6 +96,46 @@ export const MIN_SESSION_TIMEOUT_MS = 1_000;
 /** Maximum frequency (ms) of sessionStorage flushes for `lastActivityAt`. */
 export const SESSION_STORAGE_FLUSH_INTERVAL_MS = 5_000;
 
+/** Replay (rrweb) capture + upload constants (Wave-24, browser-only). */
+/** HTTP path: obtain a presigned upload URL for a replay chunk. */
+export const REPLAY_SIGNED_URL_PATH = '/v1/replay/signed-url';
+/** HTTP path: finalize a replay chunk manifest. */
+export const REPLAY_COMPLETE_PATH = '/v1/replay/complete';
+/**
+ * Content type for a replay chunk body. Pinned by `replay.json`
+ * (`ReplaySignedUrlRequest.contentType` is a const).
+ */
+export const REPLAY_CHUNK_CONTENT_TYPE =
+  'application/vnd.resolvetrace.replay+rrweb';
+/**
+ * Hard byte cap per chunk. The `replay.json` schema caps `bytes`/`approxBytes`
+ * at 3 MiB (3 145 728). We cut a new chunk well before this so a single rrweb
+ * event (e.g. a FullSnapshot) never overflows the cap.
+ */
+export const REPLAY_MAX_CHUNK_BYTES = 3 * 1024 * 1024; // 3 MiB schema cap
+/** Soft size at which a buffered chunk is cut (leaves headroom under the cap). */
+export const REPLAY_CHUNK_SOFT_BYTES = 2 * 1024 * 1024; // 2 MiB
+/** Time-based cut: flush a partial chunk after this long even if under size. */
+export const REPLAY_CHUNK_MAX_AGE_MS = 5_000;
+/** Retry policy for the 3-leg upload flow (independent of the events transport). */
+export const REPLAY_RETRY_MAX_ATTEMPTS = 4;
+export const REPLAY_RETRY_BASE_MS = 500;
+export const REPLAY_RETRY_MAX_WAIT_MS = 15_000;
+/** HTTP statuses worth retrying on the signed-url / complete legs. */
+export const REPLAY_RETRY_STATUS_CODES: ReadonlyArray<number> = [
+  429, 500, 502, 503, 504,
+];
+/** Default replay sampling rate (fraction of sessions recorded). Off by default. */
+export const DEFAULT_REPLAY_SAMPLE_RATE = 0;
+/**
+ * Diagnostics levels at or above which replay capture is permitted. Replay is
+ * the richest signal, so it is gated to the higher-consent levels by default.
+ */
+export const REPLAY_ALLOWED_DIAGNOSTICS_LEVELS: ReadonlyArray<string> = [
+  'standard',
+  'assisted_support',
+];
+
 /** Auto-capture (browser-only) heuristic + bounding defaults (Wave-21). */
 export const DEFAULT_RAGE_CLICK_THRESHOLD = 3;
 export const DEFAULT_RAGE_CLICK_WINDOW_MS = 1_000;
@@ -142,4 +182,15 @@ export const ALLOWED_AUTOCAPTURE_KEYS: ReadonlySet<string> = new Set([
   'repeatedSubmitWindowMs',
   'errorStatusThreshold',
   'maxEventsPerSession',
+  'replay',
+]);
+
+/** Allowed keys inside the `autoCapture.replay` options object (Wave-24). */
+export const ALLOWED_REPLAY_KEYS: ReadonlySet<string> = new Set([
+  'enabled',
+  'sampleRate',
+  'denyRoutes',
+  'minDiagnosticsLevel',
+  'maskTextSelector',
+  'blockSelector',
 ]);

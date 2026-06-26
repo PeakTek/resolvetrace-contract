@@ -28,6 +28,9 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "dependencies": {
+    "rrweb": "2.0.0-alpha.4"
+  },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "tsx": "^4.19.0",

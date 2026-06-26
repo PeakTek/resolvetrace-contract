@@ -76,3 +76,26 @@ export type {
   CaptureSource,
   Teardown,
 } from './autocapture/index.js';
+export type { ReplayOptions } from './types.js';
+// Masked replay (rrweb) adapter surface (Wave-24, browser-only). Exposed so
+// hosts / tests can reference the policy + chunk types; the recorder is driven
+// by the client's session lifecycle.
+export {
+  ReplayRecorder,
+  ReplayChunker,
+  ReplayTransport,
+  resolveReplayConfig,
+  defaultReplayConfig,
+  defaultMaskingConfig,
+  DEFAULT_REPLAY_BLOCK_SELECTOR,
+  DEFAULT_REPLAY_MASK_TEXT_SELECTOR,
+} from './autocapture/replay/index.js';
+export type {
+  ResolvedReplayConfig,
+  ReplayMaskingConfig,
+  ReplayChunk,
+  ReplayManifestBody,
+  ReplaySignedUrlBody,
+  ReplayScrubberReport,
+  ReplayPolicyProvider,
+} from './autocapture/replay/index.js';
