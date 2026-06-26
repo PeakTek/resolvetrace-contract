@@ -1,0 +1,50 @@
+{
+  "events": [
+    {
+      "schemaVersion": 1,
+      "eventId": "01HWZXACT0R1N2M3J4P5Q6R7S8",
+      "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5MP",
+      "type": "action.submit",
+      "capturedAt": "2026-04-20T12:35:01.000Z",
+      "scrubber": {
+        "version": "sdk@0.1.0",
+        "rulesDigest": "sha256:bd7872828dbfd9970006fbea22c24a137b27c48fb1d6dd635a88d4d09c0b28ec",
+        "applied": ["regex:email"],
+        "budgetExceeded": false
+      },
+      "sdk": {
+        "name": "@peaktek/resolvetrace-sdk",
+        "version": "0.1.0",
+        "runtime": "browser"
+      },
+      "actor": {
+        "userId": "user_abc123"
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "eventId": "01HWZXACT0R2P3Q4R5S6T7V8W9",
+      "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5MP",
+      "type": "app.checkout.completed",
+      "capturedAt": "2026-04-20T12:35:02.150Z",
+      "scrubber": {
+        "version": "sdk@0.1.0",
+        "rulesDigest": "sha256:bd7872828dbfd9970006fbea22c24a137b27c48fb1d6dd635a88d4d09c0b28ec",
+        "applied": ["regex:email"],
+        "budgetExceeded": false
+      },
+      "sdk": {
+        "name": "@peaktek/resolvetrace-sdk",
+        "version": "0.1.0",
+        "runtime": "browser"
+      },
+      "actor": {
+        "userId": "user_def456",
+        "traits": {
+          "plan": "pro",
+          "tier": 2
+        }
+      }
+    }
+  ]
+}
