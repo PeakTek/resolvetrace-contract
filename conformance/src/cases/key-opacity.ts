@@ -43,8 +43,11 @@ async function run(config: ResolvedConformanceConfig): Promise<CaseResult[]> {
         if (headers instanceof Headers) {
           observedAuth = headers.get('Authorization');
         } else if (Array.isArray(headers)) {
-          for (const [k, v] of headers) {
-            if (k.toLowerCase() === 'authorization') observedAuth = v;
+          for (const pair of headers) {
+            const k = pair[0];
+            const v = pair[1];
+            if (k === undefined) continue;
+            if (k.toLowerCase() === 'authorization') observedAuth = String(v ?? '');
           }
         } else if (headers && typeof headers === 'object') {
           for (const [k, v] of Object.entries(headers as Record<string, string>)) {
@@ -94,7 +97,7 @@ async function run(config: ResolvedConformanceConfig): Promise<CaseResult[]> {
           status: 'fail',
           durationMs,
           message: 'Authorization header was modified from verbatim Bearer <apiKey>',
-          details: { expectedLen: expected.length, observedLen: observedAuth?.length ?? 0 },
+          details: { expectedLen: expected.length, observedLen: (observedAuth ?? '').length },
         });
       }
     } catch (err) {
