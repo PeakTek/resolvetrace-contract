@@ -1,0 +1,5 @@
+{
+  "error": "session_unknown",
+  "unresolved_session_ids": ["not-a-ulid"],
+  "message": "Unknown session(s) for this tenant."
+}

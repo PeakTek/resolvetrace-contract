@@ -50,5 +50,6 @@ export {
   RateLimitDimension,
   RateLimitScope,
   RateLimitErrorResponse,
+  SessionUnknownErrorResponse,
   RateLimitHeaders,
 } from './api-responses.js';

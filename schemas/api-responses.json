@@ -221,6 +221,40 @@
           "type": "string"
         }
       ]
+    },
+    "SessionUnknownErrorResponse": {
+      "additionalProperties": false,
+      "title": "SessionUnknownErrorResponse",
+      "description": "Response body returned on HTTP 409 from POST /v1/events when strict-session mode is enabled and one or more events reference an unknown session_id. Distinct from the canonical ErrorResponse envelope: it carries the snake_case `unresolved_session_ids` list so the SDK can re-issue session-start for exactly those ids and retry the batch.",
+      "type": "object",
+      "properties": {
+        "error": {
+          "description": "Fixed discriminator for the 409 returned when one or more events in a batch carry a session_id that does not resolve for the requesting tenant (strict-session mode only).",
+          "const": "session_unknown",
+          "type": "string"
+        },
+        "unresolved_session_ids": {
+          "minItems": 1,
+          "description": "The distinct session_id values from the batch that the server could not resolve. The SDK should POST /v1/session/start for each, then retry the batch once.",
+          "type": "array",
+          "items": {
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+            "description": "A session_id (ULID) that did not resolve for this tenant.",
+            "type": "string"
+          }
+        },
+        "message": {
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "Human-readable explanation. Never contains tenant-identifying data.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "unresolved_session_ids",
+        "message"
+      ]
     }
   }
 }

@@ -166,6 +166,51 @@ export const RateLimitErrorResponse = Type.Object(
 export type RateLimitErrorResponse = Static<typeof RateLimitErrorResponse>;
 
 /* -------------------------------------------------------------------------- */
+/* Session-unknown (409)                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Crockford Base32 ULID, used here for the `unresolved_session_ids` members.
+ * Inlined (rather than imported from `events.ts`) so this module stays
+ * self-contained — the emitted `api-responses.json` carries no cross-file
+ * `$ref`. Mirrors `ULID_PATTERN` in `schemas/src/events.ts`.
+ */
+const ULID_PATTERN = '^[0-9A-HJKMNP-TV-Z]{26}$';
+
+export const SessionUnknownErrorResponse = Type.Object(
+  {
+    error: Type.Literal('session_unknown', {
+      description:
+        'Fixed discriminator for the 409 returned when one or more events in a batch carry a session_id that does not resolve for the requesting tenant (strict-session mode only).',
+    }),
+    unresolved_session_ids: Type.Array(
+      Type.String({
+        pattern: ULID_PATTERN,
+        description: 'A session_id (ULID) that did not resolve for this tenant.',
+      }),
+      {
+        minItems: 1,
+        description:
+          'The distinct session_id values from the batch that the server could not resolve. The SDK should POST /v1/session/start for each, then retry the batch once.',
+      },
+    ),
+    message: Type.String({
+      minLength: 1,
+      maxLength: 512,
+      description:
+        'Human-readable explanation. Never contains tenant-identifying data.',
+    }),
+  },
+  {
+    additionalProperties: false,
+    title: 'SessionUnknownErrorResponse',
+    description:
+      'Response body returned on HTTP 409 from POST /v1/events when strict-session mode is enabled and one or more events reference an unknown session_id. Distinct from the canonical ErrorResponse envelope: it carries the snake_case `unresolved_session_ids` list so the SDK can re-issue session-start for exactly those ids and retry the batch.',
+  },
+);
+export type SessionUnknownErrorResponse = Static<typeof SessionUnknownErrorResponse>;
+
+/* -------------------------------------------------------------------------- */
 /* Rate-limit headers                                                         */
 /* -------------------------------------------------------------------------- */
 

@@ -15,6 +15,7 @@ export interface MinimalEventOptions {
 }
 
 export interface MinimalEnvelope {
+  schemaVersion: number;
   eventId: string;
   type: string;
   capturedAt: string;
@@ -30,6 +31,7 @@ export interface MinimalEnvelope {
 
 export function buildMinimalEnvelope(opts: MinimalEventOptions = {}): MinimalEnvelope {
   const envelope: MinimalEnvelope = {
+    schemaVersion: 1,
     eventId: opts.eventId ?? generateUlid(),
     type: opts.type ?? 'conformance.smoke',
     capturedAt: new Date().toISOString(),

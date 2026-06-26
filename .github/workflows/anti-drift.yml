@@ -268,6 +268,12 @@ jobs:
       - name: Build TypeScript SDK to dist
         run: npm --prefix sdk/typescript run build
 
+      # Guards against a silently shrinking dumper: asserts every expected
+      # scenario + canonical event type is still emitted (a dropped scenario
+      # would otherwise pass validate-sdk-output vacuously).
+      - name: Dumper self-test (scenario + event-type coverage)
+        run: npm run selftest:dumper
+
       - name: Validate SDK wire output against schemas
         run: npm run validate:sdk-output
 

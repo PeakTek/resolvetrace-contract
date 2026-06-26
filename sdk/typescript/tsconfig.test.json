@@ -1,0 +1,20 @@
+{
+  // Editor / test-tooling config: extends the shippable-surface config but
+  // widens `include` to the test tree so IDEs resolve types in `tests/**`.
+  //
+  // This is intentionally NOT the config `npm run typecheck` uses. The
+  // published surface (`src/**`) is the contract gate; `tsconfig.json` (and
+  // thus `npm run typecheck`) covers only `src/**` with `rootDir: ./src`,
+  // which keeps the gate free of TS6059 (the prior failure: `rootDir: ./src`
+  // while `include` reached `tests/**`).
+  //
+  // The Vitest runner type-checks nothing — it transpiles per-file via esbuild
+  // — so test code is exercised for behavior by `npm test`, not by tsc here.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
+  "exclude": ["dist", "node_modules"]
+}

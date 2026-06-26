@@ -780,6 +780,26 @@ async function main(): Promise<void> {
     ),
   );
 
+  // Scenario 14c: canonical-app-events
+  //   - Explicitly capture the remaining canonical taxonomy types the SDK can
+  //     emit but that auto-capture does not synthesize on its own:
+  //     `action.submit`, `action.navigation`, and `view.end`. (The auto-capture
+  //     sources cover `error.*`, `perf.*`, `ux.*`, and `view.start`; the
+  //     `action.click` + `support.report_submitted` paths are covered above.)
+  //     Capturing them here closes the canonical-vocabulary gap on the SDK wire
+  //     surface so every `KNOWN_EVENT_TYPE` the SDK produces is validated
+  //     against `EventBatchRequest`, not just exercised offline by the fixture
+  //     corpus. All three ride one batch.
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runScenario('canonical-app-events', async (client) => {
+        client.capture({ type: 'action.submit' });
+        client.capture({ type: 'action.navigation' });
+        client.capture({ type: 'view.end' });
+      }),
+    ),
+  );
+
   // Scenario 15: replay-upload
   //   - Drive the replay 3-leg upload directly (signed-url → PUT → complete) so
   //     the `ReplaySignedUrlRequest` + `ReplayManifestRequest` wire bodies are

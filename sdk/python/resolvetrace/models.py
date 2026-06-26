@@ -335,6 +335,21 @@ class RateLimitErrorResponse(_Wire):
     request_id: str | None = Field(default=None, alias="requestId")
 
 
+class SessionUnknownErrorResponse(_Wire):
+    """Wire shape of the HTTP 409 returned by ``POST /v1/events`` in strict-
+    session mode when a batch references one or more unknown ``session_id``
+    values.
+
+    Distinct from :class:`ErrorResponse`: the field names are snake_case on the
+    wire (``unresolved_session_ids``), so the SDK can re-issue
+    ``POST /v1/session/start`` for exactly those ids and retry the batch once.
+    """
+
+    error: Literal["session_unknown"]
+    unresolved_session_ids: list[str] = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=512)
+
+
 # ---------------------------------------------------------------------------
 # Diagnostics (ADR-0007 frozen shape)
 # ---------------------------------------------------------------------------
@@ -406,5 +421,6 @@ __all__ = [
     "SessionStartPayload",
     "SessionStartRequest",
     "SessionStartResponse",
+    "SessionUnknownErrorResponse",
     "SessionViewport",
 ]

@@ -1,0 +1,8 @@
+{
+  "error": "session_unknown",
+  "unresolved_session_ids": [
+    "01HWZX9CVJT5S0Y1Z2N3M4K5MP",
+    "01HWZXB4BC6R0S1T2V3W4X5Y6Z"
+  ],
+  "message": "Unknown session(s) for this tenant. Issue POST /v1/session/start with these session_id values and retry the batch."
+}
