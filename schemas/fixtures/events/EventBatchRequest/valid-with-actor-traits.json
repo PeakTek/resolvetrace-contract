@@ -1,0 +1,35 @@
+{
+  "events": [
+    {
+      "schemaVersion": 1,
+      "eventId": "01HWZXACT0R8T2V3W4X5Y6Z7A9",
+      "sessionId": "01HWZX9CVJT5S0Y1Z2N3M4K5NP",
+      "type": "app.account.upgraded",
+      "capturedAt": "2026-04-20T12:35:03.250Z",
+      "scrubber": {
+        "version": "sdk@0.1.0",
+        "rulesDigest": "sha256:bd7872828dbfd9970006fbea22c24a137b27c48fb1d6dd635a88d4d09c0b28ec",
+        "applied": ["regex:email"],
+        "budgetExceeded": false
+      },
+      "sdk": {
+        "name": "@peaktek/resolvetrace-sdk",
+        "version": "0.1.0",
+        "runtime": "browser"
+      },
+      "actor": {
+        "userId": "user_def456",
+        "traits": {
+          "plan": "enterprise",
+          "tier": 3,
+          "beta": true,
+          "segments": ["smb", "priority"],
+          "org": {
+            "id": "org_acme",
+            "seats": 42
+          }
+        }
+      }
+    }
+  ]
+}
