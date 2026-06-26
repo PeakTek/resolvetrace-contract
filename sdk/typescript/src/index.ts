@@ -77,6 +77,23 @@ export type {
   Teardown,
 } from './autocapture/index.js';
 export type { ReplayOptions } from './types.js';
+// In-app problem reporting (Wave-25). The report API lives on the client
+// (`client.reportProblem`); the optional one-click widget is exported here so a
+// host can mount it explicitly, independent of the `reportWidget` config option.
+export { mountReportWidget } from './report-widget.js';
+export type {
+  ReportWidgetClient,
+  ReportWidgetHandle,
+  MountReportWidgetOptions,
+} from './report-widget.js';
+export type {
+  ReportProblemInput,
+  ReportSource,
+} from './report.js';
+export type {
+  ReportWidgetOptions,
+  ReportWidgetPosition,
+} from './types.js';
 // Masked replay (rrweb) adapter surface (Wave-24, browser-only). Exposed so
 // hosts / tests can reference the policy + chunk types; the recorder is driven
 // by the client's session lifecycle.

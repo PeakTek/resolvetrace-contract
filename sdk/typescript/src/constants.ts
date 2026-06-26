@@ -162,7 +162,32 @@ export const ALLOWED_OPTION_KEYS: ReadonlySet<string> = new Set([
   'autoSession',
   'sessionAttributes',
   'autoCapture',
+  'reportWidget',
 ]);
+
+/** Allowed keys inside the `reportWidget` options object (Wave-25). */
+export const ALLOWED_REPORT_WIDGET_KEYS: ReadonlySet<string> = new Set([
+  'enabled',
+  'position',
+  'buttonText',
+  'title',
+  'placeholder',
+  'submitText',
+  'successText',
+  'errorText',
+  'className',
+]);
+
+/** Floating-button corners the report widget supports. */
+export const REPORT_WIDGET_POSITIONS: ReadonlySet<string> = new Set([
+  'bottom-right',
+  'bottom-left',
+  'top-right',
+  'top-left',
+]);
+
+/** Default number of recent events attached to a problem report. */
+export const DEFAULT_REPORT_RECENT_CONTEXT = 20;
 
 /** Allowed keys inside the `autoCapture` options object. */
 export const ALLOWED_AUTOCAPTURE_KEYS: ReadonlySet<string> = new Set([

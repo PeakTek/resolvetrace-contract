@@ -12,6 +12,14 @@ import type { ResolvedConfig } from './config.js';
 import { buildEnvelope } from './envelope.js';
 import { SessionRequiredError } from './errors.js';
 import { IdentityState } from './identity.js';
+import {
+  DEFAULT_RECENT_CONTEXT_SIZE,
+  RecentContextBuffer,
+} from './recent-context.js';
+import { buildReportEvent } from './report.js';
+import type { ReportProblemInput, ReportSource } from './report.js';
+import { mountReportWidget } from './report-widget.js';
+import type { ReportWidgetHandle } from './report-widget.js';
 import { isBrowser } from './runtime.js';
 import { SessionManager } from './session.js';
 import { Transport } from './transport.js';
@@ -30,6 +38,9 @@ import type {
 
 /** Event types that receive automatic browser page-context enrichment. */
 const PAGE_CONTEXT_EVENT_TYPES = new Set<string>(['page_view', 'view.start']);
+
+/** Wire `type` for a submitted problem report. */
+const REPORT_EVENT_TYPE = 'support.report_submitted';
 
 /**
  * In a browser runtime, enrich page-oriented events with page URL + viewport.
@@ -124,6 +135,12 @@ export class ResolveTraceClient {
   private readonly autoCapture: AutoCapture;
   /** Last session id seen by `capture()`, used to reset the auto-capture ceiling. */
   private lastSeenSessionId: Ulid | null = null;
+  /** Bounded breadcrumb trail of recent events, attached to problem reports. */
+  private readonly recentContext = new RecentContextBuffer(
+    DEFAULT_RECENT_CONTEXT_SIZE,
+  );
+  /** Auto-mounted report widget handle (browser-only; null when not mounted). */
+  private reportWidgetHandle: ReportWidgetHandle | null = null;
 
   /** Public session controls. */
   public readonly session: {
@@ -214,6 +231,29 @@ export class ResolveTraceClient {
         }
       }
     }
+
+    // Auto-mount the optional report widget when requested via config. Browser-
+    // only and guarded inside `mountReportWidget`; never throws into the
+    // constructor. Hosts can also mount it directly with `mountReportWidget`.
+    if (this.config.reportWidget !== null) {
+      try {
+        this.reportWidgetHandle = mountReportWidget(
+          {
+            reportProblem: (input: ReportProblemInput) =>
+              this.reportProblemInternal(input, 'widget'),
+          },
+          this.config.reportWidget,
+        );
+      } catch (err) {
+        if (this.config.onError) {
+          try {
+            this.config.onError(err instanceof Error ? err : new Error(String(err)));
+          } catch {
+            /* swallow */
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -261,6 +301,17 @@ export class ResolveTraceClient {
       actor === undefined ? {} : { actor },
     );
 
+    // Record a metadata-only breadcrumb for this event so a later problem
+    // report can attach recent context. The report event is excluded so it
+    // never breadcrumbs itself. Never throws into capture().
+    if (event.type !== REPORT_EVENT_TYPE) {
+      try {
+        this.recentContext.record(event, envelope.capturedAt);
+      } catch {
+        /* breadcrumb recording is best-effort */
+      }
+    }
+
     // Run the user-supplied `beforeSend` hook (strictly after Stage-1 scrub).
     if (this.config.beforeSend) {
       const transformed = this.runBeforeSend(envelope);
@@ -278,6 +329,37 @@ export class ResolveTraceClient {
   /** Convenience wrapper: `track("page_view", {path: "/home"})`. */
   track(name: string, attrs?: EventAttributes): string {
     return this.capture({ type: name, attributes: attrs });
+  }
+
+  /**
+   * Submit an in-app problem report. Emits the canonical
+   * `support.report_submitted` event through `capture()` (so the Stage-1
+   * scrubber + session all apply) carrying the user's description, the current
+   * `session.supportCode` (when minted), and a short metadata-only breadcrumb
+   * trail of recent events — scrubbed, with NO raw form content (doc-18
+   * `report_controls`). Returns the client-generated event id (an empty string
+   * if the event was dropped, e.g. `autoSession: false` with no session).
+   *
+   * Browser + node safe. Throws a `TypeError` only when `description` is
+   * missing or blank — a contract the caller can rely on for client-side
+   * validation.
+   */
+  reportProblem(input: ReportProblemInput): string {
+    return this.reportProblemInternal(input, 'api');
+  }
+
+  /** Shared report path; `source` distinguishes the API from the widget. */
+  private reportProblemInternal(
+    input: ReportProblemInput,
+    source: ReportSource,
+  ): string {
+    const event = buildReportEvent({
+      input,
+      supportCode: this.sessionManager.getSupportCode(),
+      recentContext: this.recentContext.snapshot(),
+      source,
+    });
+    return this.capture(event);
   }
 
   /**
@@ -315,6 +397,13 @@ export class ResolveTraceClient {
     } catch {
       /* swallow — teardown must never break shutdown */
     }
+    // Tear down the auto-mounted report widget (idempotent; never throws).
+    try {
+      this.reportWidgetHandle?.destroy();
+    } catch {
+      /* swallow — teardown must never break shutdown */
+    }
+    this.reportWidgetHandle = null;
     await this.transport.shutdown(opts);
     await this.sessionManager.shutdown(opts.timeoutMs);
   }

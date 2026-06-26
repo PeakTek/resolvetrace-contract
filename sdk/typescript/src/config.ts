@@ -9,6 +9,8 @@
 import {
   ALLOWED_AUTOCAPTURE_KEYS,
   ALLOWED_OPTION_KEYS,
+  ALLOWED_REPORT_WIDGET_KEYS,
+  REPORT_WIDGET_POSITIONS,
   DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION,
   DEFAULT_ERROR_STATUS_THRESHOLD,
   DEFAULT_DEAD_CLICK_WINDOW_MS,
@@ -28,7 +30,7 @@ import {
   resolveReplayConfig,
 } from './autocapture/replay/policy.js';
 import type { ResolvedReplayConfig } from './autocapture/replay/policy.js';
-import type { ClientOptions } from './types.js';
+import type { ClientOptions, ReportWidgetOptions } from './types.js';
 
 /** Fully-resolved, validated auto-capture configuration (browser-only). */
 export interface ResolvedAutoCaptureConfig {
@@ -70,6 +72,12 @@ export interface ResolvedConfig {
   autoSession: boolean;
   sessionAttributes: (() => Record<string, unknown>) | undefined;
   autoCapture: ResolvedAutoCaptureConfig;
+  /**
+   * Validated report-widget config. `null` when the host did not request the
+   * one-click widget (the default); an options object (always carrying
+   * `enabled: true`) when auto-mount was requested via config.
+   */
+  reportWidget: ReportWidgetOptions | null;
 }
 
 /** Hosts that are allowed to use `http://` (dev / loopback). */
@@ -247,6 +255,95 @@ function resolveAutoCapture(raw: unknown): ResolvedAutoCaptureConfig {
   };
 }
 
+/**
+ * Validate + normalize the `reportWidget` option. Accepts:
+ *   - `undefined` / `false` → no auto-mounted widget (`null`).
+ *   - `true`                → auto-mount with all defaults.
+ *   - an options object     → per-key validation (rejects unknown keys, like
+ *     the top-level option allow-list); auto-mount unless `enabled: false`.
+ *
+ * The widget itself is browser-only; this resolver only normalizes config and
+ * never touches the DOM, so it is safe to run in node.
+ */
+function resolveReportWidget(raw: unknown): ReportWidgetOptions | null {
+  if (raw === undefined || raw === false) return null;
+  if (raw === true) return { enabled: true };
+  if (raw === null || typeof raw !== 'object') {
+    throw new ConfigError(
+      'config.invalid',
+      '`reportWidget` must be a boolean or an options object if provided.',
+    );
+  }
+
+  const opts = raw as Record<string, unknown>;
+  for (const key of Object.keys(opts)) {
+    if (!ALLOWED_REPORT_WIDGET_KEYS.has(key)) {
+      throw new ConfigError(
+        'config.invalid',
+        `Unknown reportWidget option: "${key}". Allowed: ${Array.from(
+          ALLOWED_REPORT_WIDGET_KEYS,
+        )
+          .sort()
+          .join(', ')}.`,
+      );
+    }
+  }
+
+  if (opts.enabled !== undefined && typeof opts.enabled !== 'boolean') {
+    throw new ConfigError(
+      'config.invalid',
+      '`reportWidget.enabled` must be a boolean if provided.',
+    );
+  }
+  if (opts.enabled === false) return null;
+
+  if (
+    opts.position !== undefined &&
+    (typeof opts.position !== 'string' ||
+      !REPORT_WIDGET_POSITIONS.has(opts.position))
+  ) {
+    throw new ConfigError(
+      'config.invalid',
+      `\`reportWidget.position\` must be one of: ${Array.from(
+        REPORT_WIDGET_POSITIONS,
+      )
+        .sort()
+        .join(', ')}.`,
+    );
+  }
+
+  const stringKeys = [
+    'buttonText',
+    'title',
+    'placeholder',
+    'submitText',
+    'successText',
+    'errorText',
+    'className',
+  ] as const;
+  for (const key of stringKeys) {
+    const v = opts[key];
+    if (v !== undefined && (typeof v !== 'string' || v.length === 0)) {
+      throw new ConfigError(
+        'config.invalid',
+        `\`reportWidget.${key}\` must be a non-empty string if provided.`,
+      );
+    }
+  }
+
+  // Re-assemble a clean, typed options object (always enabled here).
+  const out: ReportWidgetOptions = { enabled: true };
+  if (opts.position !== undefined) {
+    out.position = opts.position as ReportWidgetOptions['position'];
+  }
+  for (const key of stringKeys) {
+    if (opts[key] !== undefined) {
+      (out as Record<string, unknown>)[key] = opts[key];
+    }
+  }
+  return out;
+}
+
 export function resolveConfig(input: unknown): ResolvedConfig {
   if (input === null || typeof input !== 'object') {
     throw new ConfigError('config.invalid', 'ResolveTrace options must be an object.');
@@ -411,6 +508,9 @@ export function resolveConfig(input: unknown): ResolvedConfig {
   // autoCapture ---------------------------------------------------------
   const autoCapture = resolveAutoCapture(opts.autoCapture);
 
+  // reportWidget --------------------------------------------------------
+  const reportWidget = resolveReportWidget(opts.reportWidget);
+
   // sessionAttributes ---------------------------------------------------
   const sessionAttributesRaw = opts.sessionAttributes;
   if (
@@ -440,6 +540,7 @@ export function resolveConfig(input: unknown): ResolvedConfig {
       | (() => Record<string, unknown>)
       | undefined,
     autoCapture,
+    reportWidget,
   };
 }
 

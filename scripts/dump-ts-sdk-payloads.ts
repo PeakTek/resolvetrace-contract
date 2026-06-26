@@ -757,6 +757,29 @@ async function main(): Promise<void> {
     ),
   );
 
+  // Scenario 14b: support-report-submitted
+  //   - Capture a couple of breadcrumb events, then submit a problem report
+  //     via `client.reportProblem`. The emitted `support.report_submitted`
+  //     event must validate against EventBatchRequest/EventEnvelope: a valid
+  //     canonical `type`, schemaVersion 1, a scrubbed attributes bag carrying
+  //     the description + recentContext (metadata only). The description
+  //     embeds an email so the scrubber's redaction is exercised on the wire.
+  all.push(
+    ...dropImplicitShutdownEnds(
+      await runBrowserScenario(
+        'support-report-submitted',
+        async (client) => {
+          client.capture({ type: 'view.start' });
+          client.capture({ type: 'action.click' });
+          client.reportProblem({
+            description:
+              'Checkout button does nothing — reach me at user@example.com',
+          });
+        },
+      ),
+    ),
+  );
+
   // Scenario 15: replay-upload
   //   - Drive the replay 3-leg upload directly (signed-url → PUT → complete) so
   //     the `ReplaySignedUrlRequest` + `ReplayManifestRequest` wire bodies are

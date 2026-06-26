@@ -357,6 +357,43 @@ export interface ReplayOptions {
   blockSelector?: string;
 }
 
+/** Corner the floating report-widget button anchors to. */
+export type ReportWidgetPosition =
+  | 'bottom-right'
+  | 'bottom-left'
+  | 'top-right'
+  | 'top-left';
+
+/**
+ * Options for the optional one-click "Report a problem" widget (Wave-25).
+ *
+ * The widget is browser-only and opt-in: either mount it explicitly with
+ * `mountReportWidget(client, opts)`, or set `reportWidget` on the client
+ * constructor to have the client auto-mount it after construction. Outside a
+ * browser the widget is a guarded no-op. All text is overridable and every
+ * element carries a `data-rt-report` hook for CSS restyling.
+ */
+export interface ReportWidgetOptions {
+  /** Master switch. When `false`, nothing is mounted. Default `true`. */
+  enabled?: boolean;
+  /** Which corner the floating button sits in. Default `'bottom-right'`. */
+  position?: ReportWidgetPosition;
+  /** Floating button label. Default `'Report a problem'`. */
+  buttonText?: string;
+  /** Form heading. Default `'Report a problem'`. */
+  title?: string;
+  /** Textarea placeholder. */
+  placeholder?: string;
+  /** Submit button label. Default `'Send report'`. */
+  submitText?: string;
+  /** Success message shown after a report is accepted. */
+  successText?: string;
+  /** Error message shown when submission fails. */
+  errorText?: string;
+  /** Override the root container class (suppresses the inline base styles). */
+  className?: string;
+}
+
 /** Options accepted by the `ResolveTraceClient` constructor. */
 export interface ClientOptions {
   /** Opaque bearer token issued by the ResolveTrace control plane. */
@@ -406,6 +443,13 @@ export interface ClientOptions {
    * browser runtime; no-op outside a browser. See `AutoCaptureOptions`.
    */
   autoCapture?: AutoCaptureOptions | boolean;
+  /**
+   * Optional one-click "Report a problem" widget (browser-only, opt-in and
+   * OFF by default). `true` auto-mounts with defaults; an options object
+   * customizes it; `false`/omitted mounts nothing. Independent of
+   * `mountReportWidget`, which a host can always call directly.
+   */
+  reportWidget?: ReportWidgetOptions | boolean;
 }
 
 /** Options accepted by `client.flush()`. */
