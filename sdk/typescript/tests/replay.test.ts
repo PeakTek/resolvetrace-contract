@@ -214,10 +214,42 @@ describe('replay policy resolution', () => {
     expect(cfg.masking.blockSelector).toContain('.secret');
   });
 
-  it('rejects unknown keys and bad sampleRate', () => {
+  it('maskAllText:false masks only tagged static text — inputs still masked', () => {
+    const cfg = resolveReplayConfig(
+      { enabled: true, maskAllText: false },
+      ALLOWED_REPLAY_KEYS,
+    );
+    // Static text is no longer blanket-masked → labels stay readable…
+    expect(cfg.masking.maskTextSelector).not.toBe('*');
+    expect(cfg.masking.maskTextSelector).toContain('[data-rt-mask]');
+    // …but inputs are ALWAYS masked.
+    expect(cfg.masking.maskAllInputs).toBe(true);
+  });
+
+  it('maskAllText:false unions a host maskTextSelector for sensitive static text', () => {
+    const cfg = resolveReplayConfig(
+      { enabled: true, maskAllText: false, maskTextSelector: '.pii' },
+      ALLOWED_REPLAY_KEYS,
+    );
+    expect(cfg.masking.maskTextSelector).toContain('[data-rt-mask]');
+    expect(cfg.masking.maskTextSelector).toContain('.pii');
+    expect(cfg.masking.maskTextSelector).not.toBe('*');
+  });
+
+  it('maskAllText defaults to true (mask everything)', () => {
+    expect(
+      resolveReplayConfig({ enabled: true }, ALLOWED_REPLAY_KEYS).masking
+        .maskTextSelector,
+    ).toBe('*');
+  });
+
+  it('rejects unknown keys, bad sampleRate, and non-boolean maskAllText', () => {
     expect(() => resolveReplayConfig({ nope: 1 }, ALLOWED_REPLAY_KEYS)).toThrow();
     expect(() =>
       resolveReplayConfig({ sampleRate: 2 }, ALLOWED_REPLAY_KEYS),
+    ).toThrow();
+    expect(() =>
+      resolveReplayConfig({ maskAllText: 'no' }, ALLOWED_REPLAY_KEYS),
     ).toThrow();
   });
 

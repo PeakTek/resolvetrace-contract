@@ -216,6 +216,7 @@ export const ALLOWED_REPLAY_KEYS: ReadonlySet<string> = new Set([
   'sampleRate',
   'denyRoutes',
   'minDiagnosticsLevel',
+  'maskAllText',
   'maskTextSelector',
   'blockSelector',
 ]);

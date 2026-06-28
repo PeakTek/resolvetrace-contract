@@ -338,9 +338,10 @@ export interface AutoCaptureOptions {
  * Masked replay (rrweb) capture policy (browser-only).
  *
  * Replay is the richest auto-capture signal, so it is gated by an explicit
- * multi-layer policy and masks on by default. A misconfigured tenant cannot
- * capture raw: `maskTextSelector` / `blockSelector` only *extend* the masking
- * floor, and there is no switch to disable input/text/attribute masking.
+ * multi-layer policy and masks on by default. Input masking can NEVER be
+ * disabled (`maskAllInputs` is forced on, so anything a user types is always
+ * redacted). `maskAllText` controls only STATIC text (labels, headings, button
+ * text); `blockSelector` only *extends* the block floor.
  */
 export interface ReplayOptions {
   /** Master switch. Default `false`. */
@@ -351,7 +352,20 @@ export interface ReplayOptions {
   denyRoutes?: string[];
   /** Minimum diagnostics level required to record. Default `'standard'`. */
   minDiagnosticsLevel?: DiagnosticsLevel;
-  /** Extra text-mask selector, unioned with the default `'*'`. */
+  /**
+   * Mask ALL static text nodes (labels, headings, button text). Default `true`
+   * (privacy-max — replay shows `***` everywhere). Set `false` to keep static
+   * page text readable in replay while still masking it inside elements you tag
+   * via `maskTextSelector` / `blockSelector`. **Form inputs are masked
+   * regardless** — this never affects what a user types.
+   */
+  maskAllText?: boolean;
+  /**
+   * Text-mask selector for sensitive STATIC text. When `maskAllText` is `true`
+   * (default) text is masked everywhere and this is moot. When `maskAllText` is
+   * `false`, only text inside elements matching this selector (unioned with
+   * `[data-rt-mask],[data-private]`) is masked.
+   */
   maskTextSelector?: string;
   /** Extra block selector, unioned with `[data-rt-mask],[data-private]`. */
   blockSelector?: string;

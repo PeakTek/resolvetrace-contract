@@ -26,15 +26,16 @@ import { ConfigError } from '../../errors.js';
 import type { DiagnosticsLevel } from '../../types.js';
 
 /**
- * The rrweb masking configuration. These are **hard defaults**: masking is on,
- * and the only knobs a host may turn are *additive* (extend the block/mask
- * selectors). A host cannot disable input/text/attribute masking — a
- * misconfigured tenant must never be able to capture raw.
+ * The rrweb masking configuration. Input + attribute masking are **hard
+ * defaults** a host can never disable, so anything a user types is always
+ * redacted. The one relaxable layer is STATIC text (labels/headings): via
+ * `maskAllText` a host may switch from "mask every text node" (default) to
+ * "mask only tagged text". Block/text selectors are otherwise additive only.
  */
 export interface ReplayMaskingConfig {
   /** rrweb `maskAllInputs`. Forced `true`. */
   readonly maskAllInputs: true;
-  /** rrweb `maskTextSelector`. Defaults to `'*'` (mask all text). */
+  /** rrweb `maskTextSelector`. `'*'` (mask all text) unless `maskAllText:false`. */
   readonly maskTextSelector: string;
   /** rrweb `maskInputOptions` — every input type masked. */
   readonly maskInputOptions: Readonly<Record<string, true>>;
@@ -221,9 +222,25 @@ export function resolveReplayConfig(
     minDiagnosticsLevel = v as DiagnosticsLevel;
   }
 
-  // masking — extend only, never weaken ------------------------------------
+  // masking — inputs/attributes are ALWAYS masked; the only relaxable layer is
+  // STATIC text (labels), via `maskAllText`. ------------------------------
   const base = defaultMaskingConfig();
-  let maskTextSelector = base.maskTextSelector;
+
+  // maskAllText (default true): mask every text node. When false, only text
+  // inside tagged elements is masked, so static labels stay readable in replay.
+  // This NEVER affects inputs — `maskAllInputs` stays forced on.
+  let maskAllText = true;
+  if (opts.maskAllText !== undefined) {
+    if (typeof opts.maskAllText !== 'boolean') {
+      throw new ConfigError(
+        'config.invalid',
+        '`autoCapture.replay.maskAllText` must be a boolean if provided.',
+      );
+    }
+    maskAllText = opts.maskAllText;
+  }
+
+  let hostMaskText: string | undefined;
   if (opts.maskTextSelector !== undefined) {
     if (typeof opts.maskTextSelector !== 'string' || opts.maskTextSelector.length === 0) {
       throw new ConfigError(
@@ -231,13 +248,17 @@ export function resolveReplayConfig(
         '`autoCapture.replay.maskTextSelector` must be a non-empty string.',
       );
     }
-    // '*' already masks everything; otherwise union the selectors so the host
-    // can only ADD coverage. We keep the default in front.
-    maskTextSelector =
-      base.maskTextSelector === '*'
-        ? '*'
-        : `${base.maskTextSelector},${opts.maskTextSelector}`;
+    hostMaskText = opts.maskTextSelector;
   }
+
+  // maskAllText → '*' (mask every text node). Otherwise mask only text inside
+  // tagged elements (the block selector) plus any host-added selector.
+  const maskTextSelector = maskAllText
+    ? DEFAULT_REPLAY_MASK_TEXT_SELECTOR
+    : hostMaskText
+      ? `${DEFAULT_REPLAY_BLOCK_SELECTOR},${hostMaskText}`
+      : DEFAULT_REPLAY_BLOCK_SELECTOR;
+
   let blockSelector = base.blockSelector;
   if (opts.blockSelector !== undefined) {
     if (typeof opts.blockSelector !== 'string' || opts.blockSelector.length === 0) {
