@@ -470,6 +470,14 @@ export interface ClientOptions {
 export interface FlushOptions {
   /** Upper bound on how long to wait for the in-flight batch. */
   timeoutMs?: number;
+  /**
+   * Send batches with `keepalive: true` so the request can outlive the page —
+   * use this from a `pagehide` / `visibilitychange` handler for a best-effort
+   * final flush. Unlike `navigator.sendBeacon`, a keepalive `fetch` still sends
+   * the `Authorization` header the ingest requires. (Browsers cap keepalive
+   * request bodies at ~64 KB, which is ample for a final flush.)
+   */
+  keepalive?: boolean;
 }
 
 /** Shape returned by `flush()`. */

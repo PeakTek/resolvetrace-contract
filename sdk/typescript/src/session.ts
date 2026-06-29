@@ -48,6 +48,8 @@ interface StoredSession {
   sessionId: Ulid;
   startedAt: IsoDateTime;
   lastActivityAt: IsoDateTime;
+  /** Server-minted support code, persisted so it survives a page reload. */
+  supportCode?: string;
 }
 
 /** Shape of a parsed but not-yet-validated stored blob (either field naming). */
@@ -55,6 +57,7 @@ interface StoredSessionMaybe {
   sessionId?: unknown;
   startedAt?: unknown;
   lastActivityAt?: unknown;
+  supportCode?: unknown;
   // Legacy snake_case keys, accepted on read for backward compatibility.
   session_id?: unknown;
   started_at?: unknown;
@@ -295,7 +298,12 @@ export class SessionManager {
     const id = this.currentId;
     this.state = 'ending';
     this.clearTimers();
-    this.flushStoredSession();
+    // Explicit shutdown ends the session: clear the persisted blob so the next
+    // page load starts a fresh session instead of restoring this (ended) one.
+    // Refresh continuity is preserved by the unload *flush* path, which never
+    // ends the session and leaves the blob for sessionStorage to carry across
+    // reloads.
+    this.clearStoredSession();
     const payload: SessionEndPayload = {
       sessionId: id,
       endedAt: new Date(this.nowFn()).toISOString(),
@@ -407,6 +415,8 @@ export class SessionManager {
     if (acceptance === null) return;
     if (this.currentId !== forSessionId) return;
     this.supportCode = acceptance.supportCode;
+    // Persist the now-known code so it survives a page reload (see tryRestore).
+    this.flushStoredSession();
   }
 
   private buildStartPayload(id: Ulid, startedAtMs: number): SessionStartPayload {
@@ -602,6 +612,14 @@ export class SessionManager {
     this.startedAtMs = startedMs;
     this.lastActivityMs = lastMs;
     this.lastFlushedActivityMs = lastMs;
+    // Restore the server-minted support code alongside the rest of the session
+    // state so it survives a reload. Restore stays network-free by design (see
+    // the "without re-issuing session-start" test); a blob written before this
+    // field existed carries no code until the session next rolls to a fresh start.
+    this.supportCode =
+      typeof parsed.supportCode === 'string' && parsed.supportCode.length > 0
+        ? parsed.supportCode
+        : null;
     this.state = 'active';
     this.armInactivityTimer();
     this.armMaxDurationTimer();
@@ -616,6 +634,7 @@ export class SessionManager {
       sessionId: this.currentId,
       startedAt: new Date(this.startedAtMs).toISOString(),
       lastActivityAt: new Date(last).toISOString(),
+      ...(this.supportCode !== null ? { supportCode: this.supportCode } : {}),
     };
     try {
       ss.setItem(this.storageKey, JSON.stringify(stored));

@@ -355,7 +355,7 @@ export class Transport {
    * chain behind it, so the caller always sees the queue fully drained before
    * the returned promise resolves.
    */
-  async flush(opts?: { timeoutMs?: number }): Promise<FlushResult> {
+  async flush(opts?: { timeoutMs?: number; keepalive?: boolean }): Promise<FlushResult> {
     const start = nowMs();
     let sent = 0;
     let dropped = 0;
@@ -374,7 +374,7 @@ export class Transport {
       const batch = this.takeBatch();
       if (batch.length === 0) break;
 
-      const pending = this.postBatchWithRecovery(batch)
+      const pending = this.postBatchWithRecovery(batch, opts?.keepalive ?? false)
         .then(() => {
           sent += batch.length;
         })
@@ -399,9 +399,9 @@ export class Transport {
    * exactly once. A second 409 surfaces `session.recovery_failed` via
    * `onError` and drops the batch.
    */
-  private async postBatchWithRecovery(batch: EventEnvelope[]): Promise<void> {
+  private async postBatchWithRecovery(batch: EventEnvelope[], keepalive: boolean): Promise<void> {
     try {
-      await this.postWithRetry(batch);
+      await this.postWithRetry(batch, keepalive);
       return;
     } catch (err) {
       if (!(err instanceof SessionUnknownError)) throw err;
@@ -412,7 +412,7 @@ export class Transport {
         this.debugLog('session.recovery_failed', recoveryErr);
       }
       try {
-        await this.postWithRetry(batch);
+        await this.postWithRetry(batch, keepalive);
         return;
       } catch (retryErr) {
         if (retryErr instanceof SessionUnknownError) {
@@ -494,7 +494,7 @@ export class Transport {
     }
   }
 
-  private async postWithRetry(batch: EventEnvelope[]): Promise<void> {
+  private async postWithRetry(batch: EventEnvelope[], keepalive: boolean): Promise<void> {
     const body = JSON.stringify({ events: batch });
     const url = new URL(EVENTS_PATH, this.config.endpointUrl).toString();
 
@@ -515,6 +515,7 @@ export class Transport {
             Authorization: `Bearer ${this.config.apiKey}`,
           },
           body,
+          keepalive,
         });
 
         status = response.status;

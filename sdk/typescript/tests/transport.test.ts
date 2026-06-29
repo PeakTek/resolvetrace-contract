@@ -74,6 +74,27 @@ describe('Transport', () => {
     expect(body.events).toHaveLength(1);
   });
 
+  it('flush({ keepalive: true }) marks the request keepalive but keeps auth', async () => {
+    const fetchImpl = vi.fn(async () => makeResponse(202));
+    const t = new Transport(makeCfg(), { fetchImpl, sleep: sleepImpl });
+    t.enqueue(buildEnvelope({ type: 'page_view' }));
+    await t.flush({ keepalive: true });
+    const init = fetchImpl.mock.calls[0]![1]!;
+    expect(init.keepalive).toBe(true);
+    // The reason we use a keepalive fetch over sendBeacon: it still sends auth.
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      'Bearer rt_live_test_token',
+    );
+  });
+
+  it('a normal flush does not set keepalive', async () => {
+    const fetchImpl = vi.fn(async () => makeResponse(202));
+    const t = new Transport(makeCfg(), { fetchImpl, sleep: sleepImpl });
+    t.enqueue(buildEnvelope({ type: 'page_view' }));
+    await t.flush();
+    expect(fetchImpl.mock.calls[0]![1]!.keepalive).toBeFalsy();
+  });
+
   it('batches up to MAX_BATCH_EVENTS in a single request', async () => {
     const fetchImpl = vi.fn(async () => makeResponse(202));
     const t = new Transport(makeCfg(), { fetchImpl, sleep: sleepImpl });

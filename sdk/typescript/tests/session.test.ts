@@ -444,6 +444,65 @@ describe('SessionManager persistence (sessionStorage)', () => {
     expect(startCalls.length).toBe(0);
   });
 
+  // 5c. Support code survives a reload: persisted on start, restored network-free.
+  it('persists the support code to storage once session-start resolves', async () => {
+    const key = endpointStorageKey(ENDPOINT);
+    const now = 1_700_000_000_000;
+    const { transport } = makeSessionTransport({
+      startImpl: async () => ({ supportCode: 'AB7K2MNP' }),
+    });
+    const mgr = new SessionManager({
+      endpoint: ENDPOINT,
+      transport,
+      identity: new IdentityState(),
+      now: () => now,
+    });
+    mgr.ensureStarted(); // fresh start → fires postSessionStart (fire-and-forget)
+    for (let i = 0; i < 6; i++) await Promise.resolve();
+    expect(mgr.getSupportCode()).toBe('AB7K2MNP');
+    expect(JSON.parse(storage[key]!).supportCode).toBe('AB7K2MNP');
+  });
+
+  it('restores a persisted support code without re-issuing session-start', async () => {
+    const key = endpointStorageKey(ENDPOINT);
+    const now = 1_700_000_000_000;
+    storage[key] = JSON.stringify({
+      sessionId: '01HZK3X4Q2P5RXX7ZZ7ZZ7ZZ7Z',
+      startedAt: new Date(now - 60_000).toISOString(),
+      lastActivityAt: new Date(now - 1_000).toISOString(),
+      supportCode: 'AB7K2MNP',
+    });
+    const { transport, startCalls } = makeSessionTransport();
+    const mgr = new SessionManager({
+      endpoint: ENDPOINT,
+      transport,
+      identity: new IdentityState(),
+      now: () => now,
+    });
+    expect(mgr.getSupportCode()).toBe('AB7K2MNP');
+    mgr.ensureStarted();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(startCalls.length).toBe(0); // network-free restore preserved
+  });
+
+  // 5d. Explicit shutdown clears the persisted session → fresh next load.
+  it('clears the stored session on shutdown so the next load starts fresh', async () => {
+    const key = endpointStorageKey(ENDPOINT);
+    const now = 1_700_000_000_000;
+    const { transport } = makeSessionTransport();
+    const mgr = new SessionManager({
+      endpoint: ENDPOINT,
+      transport,
+      identity: new IdentityState(),
+      now: () => now,
+    });
+    mgr.ensureStarted();
+    expect(storage[key]).toBeDefined(); // session persisted on start
+    await mgr.shutdown();
+    expect(storage[key]).toBeUndefined(); // explicit shutdown wipes the blob
+  });
+
   // 6. Stale restore discard (inactivity)
   it('discards stored sessions whose lastActivityAt exceeds inactivity window', async () => {
     const key = endpointStorageKey(ENDPOINT);
