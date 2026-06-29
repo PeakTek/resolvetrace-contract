@@ -157,6 +157,16 @@ export class ReplayRecorder {
         blockSelector: m.blockSelector,
         recordCanvas: m.recordCanvas,
         collectFonts: m.collectFonts,
+        // A recorder failure must never surface in a customer's session. rrweb
+        // routes any error thrown inside its own observers / DOM serialization
+        // here; we send it to internal diagnostics (`reportError`, i.e. the
+        // host `onError` callback) and return `true` so rrweb swallows it
+        // instead of rethrowing to `window.onerror` — which the SDK's own
+        // `error.js` auto-capture would otherwise record as a session event.
+        errorHandler: (error: unknown) => {
+          this.report(error);
+          return true;
+        },
       });
       this.stopRrweb = typeof stop === 'function' ? stop : null;
       if (!this.stopRrweb) {
