@@ -16,6 +16,9 @@
       "title": "ErrorResponse",
       "description": "Canonical error envelope returned by every ingest endpoint on non-2xx responses, unless a more specific schema is documented (e.g. 429).",
       "type": "object",
+      "required": [
+        "error"
+      ],
       "properties": {
         "error": {
           "minLength": 1,
@@ -43,10 +46,7 @@
             "^(.*)$": {}
           }
         }
-      },
-      "required": [
-        "error"
-      ]
+      }
     },
     "RateLimitClass": {
       "description": "Which ingest request class tripped the limit.",
@@ -91,6 +91,12 @@
       "title": "RateLimitErrorResponse",
       "description": "Response body returned on HTTP 429 (per-tenant throttle) and HTTP 503 (global shed). Clients should honour the `Retry-After` header and back off with jitter.",
       "type": "object",
+      "required": [
+        "error",
+        "retryAfterSeconds",
+        "class",
+        "scope"
+      ],
       "properties": {
         "error": {
           "description": "Rate-limit error identifier.",
@@ -167,19 +173,19 @@
           "maxLength": 128,
           "type": "string"
         }
-      },
-      "required": [
-        "error",
-        "retryAfterSeconds",
-        "class",
-        "scope"
-      ]
+      }
     },
     "RateLimitHeaders": {
       "additionalProperties": true,
       "title": "RateLimitHeaders",
       "description": "Standard rate-limit response headers emitted on every 429 response (and alongside 200 responses when a tenant is approaching its limit).",
       "type": "object",
+      "required": [
+        "Retry-After",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset"
+      ],
       "properties": {
         "Retry-After": {
           "pattern": "^\\d+$",
@@ -201,13 +207,7 @@
           "description": "Unix epoch seconds at which the next token is guaranteed available.",
           "type": "string"
         }
-      },
-      "required": [
-        "Retry-After",
-        "X-RateLimit-Limit",
-        "X-RateLimit-Remaining",
-        "X-RateLimit-Reset"
-      ]
+      }
     },
     "RateLimitScope": {
       "description": "`tenant` for 429 (per-tenant bucket); `global` for 503 (fleet-wide shed).",
@@ -227,6 +227,11 @@
       "title": "SessionUnknownErrorResponse",
       "description": "Response body returned on HTTP 409 from POST /v1/events when strict-session mode is enabled and one or more events reference an unknown session_id. Distinct from the canonical ErrorResponse envelope: it carries the snake_case `unresolved_session_ids` list so the SDK can re-issue session-start for exactly those ids and retry the batch.",
       "type": "object",
+      "required": [
+        "error",
+        "unresolved_session_ids",
+        "message"
+      ],
       "properties": {
         "error": {
           "description": "Fixed discriminator for the 409 returned when one or more events in a batch carry a session_id that does not resolve for the requesting tenant (strict-session mode only).",
@@ -249,12 +254,7 @@
           "description": "Human-readable explanation. Never contains tenant-identifying data.",
           "type": "string"
         }
-      },
-      "required": [
-        "error",
-        "unresolved_session_ids",
-        "message"
-      ]
+      }
     }
   }
 }

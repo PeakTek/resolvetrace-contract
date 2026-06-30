@@ -51,6 +51,10 @@
         "viewport": {
           "additionalProperties": false,
           "type": "object",
+          "required": [
+            "width",
+            "height"
+          ],
           "properties": {
             "width": {
               "minimum": 0,
@@ -67,11 +71,7 @@
               "maximum": 16,
               "type": "number"
             }
-          },
-          "required": [
-            "width",
-            "height"
-          ]
+          }
         }
       }
     },
@@ -121,6 +121,11 @@
       "title": "SessionEndRequest",
       "description": "Request body for `POST /v1/session/end`.",
       "type": "object",
+      "required": [
+        "sessionId",
+        "endedAt",
+        "reason"
+      ],
       "properties": {
         "sessionId": {
           "format": "ulid",
@@ -184,18 +189,17 @@
           "description": "Client-side count of replay chunks uploaded in this session.",
           "type": "integer"
         }
-      },
-      "required": [
-        "sessionId",
-        "endedAt",
-        "reason"
-      ]
+      }
     },
     "SessionEndResponse": {
       "additionalProperties": false,
       "title": "SessionEndResponse",
       "description": "Response body for `POST /v1/session/end` (HTTP 200).",
       "type": "object",
+      "required": [
+        "sessionId",
+        "acceptedAt"
+      ],
       "properties": {
         "sessionId": {
           "format": "ulid",
@@ -208,16 +212,15 @@
           "description": "ISO-8601 / RFC 3339 timestamp (UTC recommended).",
           "type": "string"
         }
-      },
-      "required": [
-        "sessionId",
-        "acceptedAt"
-      ]
+      }
     },
     "SessionStartIdentify": {
       "additionalProperties": false,
       "description": "Identity decoration folded in from a client.identify(...) call that occurred before session start.",
       "type": "object",
+      "required": [
+        "userId"
+      ],
       "properties": {
         "userId": {
           "minLength": 1,
@@ -232,16 +235,17 @@
             "^(.*)$": {}
           }
         }
-      },
-      "required": [
-        "userId"
-      ]
+      }
     },
     "SessionStartRequest": {
       "additionalProperties": false,
       "title": "SessionStartRequest",
       "description": "Request body for `POST /v1/session/start`.",
       "type": "object",
+      "required": [
+        "sessionId",
+        "startedAt"
+      ],
       "properties": {
         "sessionId": {
           "format": "ulid",
@@ -307,6 +311,10 @@
             "viewport": {
               "additionalProperties": false,
               "type": "object",
+              "required": [
+                "width",
+                "height"
+              ],
               "properties": {
                 "width": {
                   "minimum": 0,
@@ -323,11 +331,7 @@
                   "maximum": 16,
                   "type": "number"
                 }
-              },
-              "required": [
-                "width",
-                "height"
-              ]
+              }
             }
           }
         },
@@ -341,6 +345,9 @@
           "additionalProperties": false,
           "description": "Identity decoration folded in from a client.identify(...) call that occurred before session start.",
           "type": "object",
+          "required": [
+            "userId"
+          ],
           "properties": {
             "userId": {
               "minLength": 1,
@@ -355,22 +362,20 @@
                 "^(.*)$": {}
               }
             }
-          },
-          "required": [
-            "userId"
-          ]
+          }
         }
-      },
-      "required": [
-        "sessionId",
-        "startedAt"
-      ]
+      }
     },
     "SessionStartResponse": {
       "additionalProperties": false,
       "title": "SessionStartResponse",
       "description": "Response body for `POST /v1/session/start` (HTTP 201).",
       "type": "object",
+      "required": [
+        "sessionId",
+        "acceptedAt",
+        "supportCode"
+      ],
       "properties": {
         "sessionId": {
           "format": "ulid",
@@ -388,16 +393,15 @@
           "description": "Per-session support code (Crockford base32, 8 chars, uppercase canonical). Server-minted on session start; the SDK surfaces it for \"Support code: XXXXXXXX\" display.",
           "type": "string"
         }
-      },
-      "required": [
-        "sessionId",
-        "acceptedAt",
-        "supportCode"
-      ]
+      }
     },
     "SessionViewport": {
       "additionalProperties": false,
       "type": "object",
+      "required": [
+        "width",
+        "height"
+      ],
       "properties": {
         "width": {
           "minimum": 0,
@@ -414,11 +418,7 @@
           "maximum": 16,
           "type": "number"
         }
-      },
-      "required": [
-        "width",
-        "height"
-      ]
+      }
     }
   }
 }

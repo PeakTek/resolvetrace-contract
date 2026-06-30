@@ -18,13 +18,13 @@
     "check:all": "npm run typecheck && npm run build:schemas && npm run validate:fixtures && npm run validate:openapi && npm run selftest:dumper && npm run validate:sdk-output"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.33.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1"
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^15.4.0",
     "@seriousme/openapi-schema-validator": "^2.4.0",
+    "@sinclair/typebox": "^0.34.49",
     "@types/node": "^26.0.1",
     "prettier": "^3.9.4",
     "tsx": "^4.19.0",

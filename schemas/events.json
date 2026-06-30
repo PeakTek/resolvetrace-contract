@@ -8,6 +8,9 @@
       "additionalProperties": false,
       "description": "Caller-supplied identity decoration.",
       "type": "object",
+      "required": [
+        "userId"
+      ],
       "properties": {
         "userId": {
           "minLength": 1,
@@ -22,10 +25,7 @@
             "^(.*)$": {}
           }
         }
-      },
-      "required": [
-        "userId"
-      ]
+      }
     },
     "CustomEventType": {
       "minLength": 1,
@@ -63,6 +63,11 @@
       "title": "EventBatchAcceptedResponse",
       "description": "Success response body for `POST /v1/events` (HTTP 202).",
       "type": "object",
+      "required": [
+        "accepted",
+        "duplicates",
+        "receivedAt"
+      ],
       "properties": {
         "accepted": {
           "minimum": 0,
@@ -79,18 +84,16 @@
           "description": "ISO-8601 / RFC 3339 timestamp (UTC recommended).",
           "type": "string"
         }
-      },
-      "required": [
-        "accepted",
-        "duplicates",
-        "receivedAt"
-      ]
+      }
     },
     "EventBatchRequest": {
       "additionalProperties": false,
       "title": "EventBatchRequest",
       "description": "Request body for `POST /v1/events`.",
       "type": "object",
+      "required": [
+        "events"
+      ],
       "properties": {
         "events": {
           "minItems": 1,
@@ -102,6 +105,14 @@
             "title": "EventEnvelope",
             "description": "A single event envelope. Enclosed in the `events` array of a batch request body.",
             "type": "object",
+            "required": [
+              "schemaVersion",
+              "eventId",
+              "type",
+              "capturedAt",
+              "scrubber",
+              "sdk"
+            ],
             "properties": {
               "schemaVersion": {
                 "minimum": 1,
@@ -138,6 +149,12 @@
                 "title": "EventContext",
                 "description": "Shared per-event global context. Optional on the envelope; when present, releaseVersion/locale/market/diagnosticsLevel are required.",
                 "type": "object",
+                "required": [
+                  "releaseVersion",
+                  "locale",
+                  "market",
+                  "diagnosticsLevel"
+                ],
                 "properties": {
                   "releaseVersion": {
                     "minLength": 1,
@@ -251,13 +268,7 @@
                     "description": "Support code correlating user-visible reports to a session. Shape only — generation/lookup is handled in a later wave.",
                     "type": "string"
                   }
-                },
-                "required": [
-                  "releaseVersion",
-                  "locale",
-                  "market",
-                  "diagnosticsLevel"
-                ]
+                }
               },
               "severity": {
                 "description": "Event severity: info | warn | error.",
@@ -298,6 +309,12 @@
                 "additionalProperties": false,
                 "description": "Client-side scrubber application report.",
                 "type": "object",
+                "required": [
+                  "version",
+                  "rulesDigest",
+                  "applied",
+                  "budgetExceeded"
+                ],
                 "properties": {
                   "version": {
                     "minLength": 1,
@@ -329,13 +346,7 @@
                     "description": "Observed scrub duration in milliseconds.",
                     "type": "number"
                   }
-                },
-                "required": [
-                  "version",
-                  "rulesDigest",
-                  "applied",
-                  "budgetExceeded"
-                ]
+                }
               },
               "clockSkewDetected": {
                 "description": "Set by the server when the client timestamp is outside the accepted skew window. Clients should not set this.",
@@ -345,6 +356,10 @@
                 "additionalProperties": false,
                 "description": "SDK identity stamped on every envelope.",
                 "type": "object",
+                "required": [
+                  "name",
+                  "version"
+                ],
                 "properties": {
                   "name": {
                     "minLength": 1,
@@ -364,16 +379,15 @@
                     "description": "Free-form runtime identifier (e.g. \"browser\", \"node-20\", \"python-3.12\").",
                     "type": "string"
                   }
-                },
-                "required": [
-                  "name",
-                  "version"
-                ]
+                }
               },
               "actor": {
                 "additionalProperties": false,
                 "description": "Caller-supplied identity decoration.",
                 "type": "object",
+                "required": [
+                  "userId"
+                ],
                 "properties": {
                   "userId": {
                     "minLength": 1,
@@ -388,32 +402,24 @@
                       "^(.*)$": {}
                     }
                   }
-                },
-                "required": [
-                  "userId"
-                ]
+                }
               }
-            },
-            "required": [
-              "schemaVersion",
-              "eventId",
-              "type",
-              "capturedAt",
-              "scrubber",
-              "sdk"
-            ]
+            }
           }
         }
-      },
-      "required": [
-        "events"
-      ]
+      }
     },
     "EventContext": {
       "additionalProperties": false,
       "title": "EventContext",
       "description": "Shared per-event global context. Optional on the envelope; when present, releaseVersion/locale/market/diagnosticsLevel are required.",
       "type": "object",
+      "required": [
+        "releaseVersion",
+        "locale",
+        "market",
+        "diagnosticsLevel"
+      ],
       "properties": {
         "releaseVersion": {
           "minLength": 1,
@@ -527,19 +533,21 @@
           "description": "Support code correlating user-visible reports to a session. Shape only — generation/lookup is handled in a later wave.",
           "type": "string"
         }
-      },
-      "required": [
-        "releaseVersion",
-        "locale",
-        "market",
-        "diagnosticsLevel"
-      ]
+      }
     },
     "EventEnvelope": {
       "additionalProperties": false,
       "title": "EventEnvelope",
       "description": "A single event envelope. Enclosed in the `events` array of a batch request body.",
       "type": "object",
+      "required": [
+        "schemaVersion",
+        "eventId",
+        "type",
+        "capturedAt",
+        "scrubber",
+        "sdk"
+      ],
       "properties": {
         "schemaVersion": {
           "minimum": 1,
@@ -576,6 +584,12 @@
           "title": "EventContext",
           "description": "Shared per-event global context. Optional on the envelope; when present, releaseVersion/locale/market/diagnosticsLevel are required.",
           "type": "object",
+          "required": [
+            "releaseVersion",
+            "locale",
+            "market",
+            "diagnosticsLevel"
+          ],
           "properties": {
             "releaseVersion": {
               "minLength": 1,
@@ -689,13 +703,7 @@
               "description": "Support code correlating user-visible reports to a session. Shape only — generation/lookup is handled in a later wave.",
               "type": "string"
             }
-          },
-          "required": [
-            "releaseVersion",
-            "locale",
-            "market",
-            "diagnosticsLevel"
-          ]
+          }
         },
         "severity": {
           "description": "Event severity: info | warn | error.",
@@ -736,6 +744,12 @@
           "additionalProperties": false,
           "description": "Client-side scrubber application report.",
           "type": "object",
+          "required": [
+            "version",
+            "rulesDigest",
+            "applied",
+            "budgetExceeded"
+          ],
           "properties": {
             "version": {
               "minLength": 1,
@@ -767,13 +781,7 @@
               "description": "Observed scrub duration in milliseconds.",
               "type": "number"
             }
-          },
-          "required": [
-            "version",
-            "rulesDigest",
-            "applied",
-            "budgetExceeded"
-          ]
+          }
         },
         "clockSkewDetected": {
           "description": "Set by the server when the client timestamp is outside the accepted skew window. Clients should not set this.",
@@ -783,6 +791,10 @@
           "additionalProperties": false,
           "description": "SDK identity stamped on every envelope.",
           "type": "object",
+          "required": [
+            "name",
+            "version"
+          ],
           "properties": {
             "name": {
               "minLength": 1,
@@ -802,16 +814,15 @@
               "description": "Free-form runtime identifier (e.g. \"browser\", \"node-20\", \"python-3.12\").",
               "type": "string"
             }
-          },
-          "required": [
-            "name",
-            "version"
-          ]
+          }
         },
         "actor": {
           "additionalProperties": false,
           "description": "Caller-supplied identity decoration.",
           "type": "object",
+          "required": [
+            "userId"
+          ],
           "properties": {
             "userId": {
               "minLength": 1,
@@ -826,20 +837,9 @@
                 "^(.*)$": {}
               }
             }
-          },
-          "required": [
-            "userId"
-          ]
+          }
         }
-      },
-      "required": [
-        "schemaVersion",
-        "eventId",
-        "type",
-        "capturedAt",
-        "scrubber",
-        "sdk"
-      ]
+      }
     },
     "EventType": {
       "minLength": 1,
@@ -919,6 +919,12 @@
       "additionalProperties": false,
       "description": "Client-side scrubber application report.",
       "type": "object",
+      "required": [
+        "version",
+        "rulesDigest",
+        "applied",
+        "budgetExceeded"
+      ],
       "properties": {
         "version": {
           "minLength": 1,
@@ -950,18 +956,16 @@
           "description": "Observed scrub duration in milliseconds.",
           "type": "number"
         }
-      },
-      "required": [
-        "version",
-        "rulesDigest",
-        "applied",
-        "budgetExceeded"
-      ]
+      }
     },
     "SdkIdentity": {
       "additionalProperties": false,
       "description": "SDK identity stamped on every envelope.",
       "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
       "properties": {
         "name": {
           "minLength": 1,
@@ -981,11 +985,7 @@
           "description": "Free-form runtime identifier (e.g. \"browser\", \"node-20\", \"python-3.12\").",
           "type": "string"
         }
-      },
-      "required": [
-        "name",
-        "version"
-      ]
+      }
     },
     "Severity": {
       "description": "Event severity: info | warn | error.",
