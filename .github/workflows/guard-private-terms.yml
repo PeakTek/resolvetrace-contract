@@ -1,0 +1,27 @@
+name: Guard private terms
+
+# Fails a PR if commit messages, the PR title/body, or newly-added source lines
+# reference private repos / managed-service internals. The denylist lives in the
+# PRIVATE_TERM_DENYLIST_B64 repo/org secret (base64 of newline-separated
+# regexes), so no sensitive term is stored in this public repo.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan PR for private / managed-service terms
+        env:
+          PRIVATE_TERM_DENYLIST_B64: ${{ secrets.PRIVATE_TERM_DENYLIST_B64 }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: bash .github/scripts/guard-private-terms.sh "origin/${{ github.event.pull_request.base.ref }}"

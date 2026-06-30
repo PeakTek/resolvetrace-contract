@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#
+# Local pre-push guard for this PUBLIC repository.
+#
+# Refuses to push commits or diffs that reference private repos / managed-service
+# internals. Mirrors the "Guard private terms" CI check, but runs BEFORE anything
+# reaches GitHub — closing the gap for commits pushed straight to a branch.
+#
+# Enable in a fresh clone:   git config core.hooksPath .githooks
+# Denylist source (first found wins):
+#   1. $PRIVATE_TERM_DENYLIST_B64 in the environment
+#   2. .git/private-term-denylist.b64   (untracked; never committed)
+# If neither is present the hook warns and allows the push (fail-open locally;
+# CI is the hard gate).
+#
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$ROOT/.github/scripts/guard-private-terms.sh"
+ZERO="0000000000000000000000000000000000000000"
+
+if [ ! -f "$SCRIPT" ]; then
+  echo "pre-push: guard script not found at $SCRIPT — skipping."
+  exit 0
+fi
+
+if [ -z "${PRIVATE_TERM_DENYLIST_B64:-}" ] && [ -f "$ROOT/.git/private-term-denylist.b64" ]; then
+  PRIVATE_TERM_DENYLIST_B64="$(cat "$ROOT/.git/private-term-denylist.b64")"
+  export PRIVATE_TERM_DENYLIST_B64
+fi
+
+status=0
+# stdin: <local-ref> <local-sha> <remote-ref> <remote-sha> per pushed ref.
+while read -r _localref localsha _remoteref remotesha; do
+  [ "$localsha" = "$ZERO" ] && continue   # branch deletion — nothing to scan
+  if printf '%s' "$remotesha" | grep -qE '^0+$'; then
+    # New branch on the remote: diff against the default branch if we can.
+    base="$(git merge-base "$localsha" origin/HEAD 2>/dev/null || true)"
+    [ -z "$base" ] && base="$(git rev-parse "${localsha}^" 2>/dev/null || echo "$localsha")"
+  else
+    base="$remotesha"
+  fi
+  PR_TITLE="" PR_BODY="" bash "$SCRIPT" "$base" "$localsha" || status=1
+done
+
+if [ "$status" -ne 0 ]; then
+  echo "pre-push: BLOCKED — private/managed-service reference found. Reframe via the public seam, then re-push. (override only if you are certain: git push --no-verify)"
+fi
+exit $status
