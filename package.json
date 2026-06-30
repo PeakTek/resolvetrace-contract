@@ -26,7 +26,7 @@
     "@apidevtools/json-schema-ref-parser": "^15.4.0",
     "@seriousme/openapi-schema-validator": "^2.4.0",
     "@types/node": "^26.0.1",
-    "prettier": "^3.3.0",
+    "prettier": "^3.9.4",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0"
   }
