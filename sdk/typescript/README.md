@@ -85,6 +85,47 @@ process shutdown (server). Subsequent `capture` calls are dropped.
 Returns a snapshot of internal counters — useful for surfacing SDK health in
 your own observability dashboard.
 
+### Session replay — `client.replay.start()` / `client.replay.stop()`
+
+Masked session replay is configured under `autoCapture.replay`. The
+`autoCapture.replay.mode` trigger is one of:
+
+- `'auto'` (default) — record the whole session (all-or-nothing).
+- `'off'` — never record.
+- `'manual'` — record **only** between `client.replay.start()` and
+  `client.replay.stop()`.
+
+`client.replay.start()` / `stop()` are always safe to call and **portable**:
+they are documented no-ops unless the deployment's policy selects `'manual'`, so
+the same host-app code runs unchanged everywhere. `start()` resolves `true` only
+when a capture span actually began.
+
+`'manual'` mode — where a consent flow drives `start()`/`stop()` and the server
+admits replay only for sessions with recorded end-user consent — is a
+**ResolveTrace Platform** capability (see the availability table below).
+Self-hosted OSS is all-or-nothing (`'auto'`/`'off'`).
+
+## Feature availability by deployment
+
+The SDK contract is identical on every deployment; which capabilities the
+**server** honors depends on where you run. Baseline features work on the
+self-hosted open-source build; some are managed-tier only.
+
+| Capability | OSS (self-hosted) | Platform | Enterprise |
+| --- | :---: | :---: | :---: |
+| Event capture, sessions, `track` / `capture` | ✅ | ✅ | ✅ |
+| Stage-1 PII scrubbing (mask-on-by-default) | ✅ | ✅ | ✅ |
+| Auto (whole-session) masked replay | ✅ | ✅ | ✅ |
+| In-app report widget | ✅ | ✅ | ✅ |
+| Consent-gated **manual** replay (`mode:'manual'` + `replay.start()/stop()`) | — | ✅ | ✅ |
+| Server-side replay-upload enforcement (end-user consent) | — | ✅ | ✅ |
+| Per-tenant replay policy | — | ✅ | ✅ |
+| SSO / SAML, dedicated isolation, audit export | — | — | soon |
+
+Using a Platform/Enterprise API on an OSS deployment is safe — the primitives
+(`mode`, `replay.start()/stop()`) stay no-ops there, so there is nothing to
+guard in your app code.
+
 ## Sessions
 
 The SDK automatically groups events under a session. By default a session
