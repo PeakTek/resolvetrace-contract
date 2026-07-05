@@ -76,7 +76,7 @@ export type {
   CaptureSource,
   Teardown,
 } from './autocapture/index.js';
-export type { ReplayOptions } from './types.js';
+export type { ReplayOptions, ReplayMode } from './types.js';
 // In-app problem reporting (Wave-25). The report API lives on the client
 // (`client.reportProblem`); the optional one-click widget is exported here so a
 // host can mount it explicitly, independent of the `reportWidget` config option.

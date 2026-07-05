@@ -343,7 +343,26 @@ export interface AutoCaptureOptions {
  * redacted). `maskAllText` controls only STATIC text (labels, headings, button
  * text); `blockSelector` only *extends* the block floor.
  */
+/**
+ * Replay trigger model. A neutral SDK mechanism — no consent or entitlement
+ * logic lives here; a deployment decides which trigger it honors:
+ *   - `'auto'`   — record the whole session automatically (the default).
+ *   - `'off'`    — never record.
+ *   - `'manual'` — record ONLY between `client.replay.start()` and
+ *     `client.replay.stop()`. `start()`/`stop()` are documented no-ops in the
+ *     other two modes, so host-app code that calls them stays portable.
+ * A deployment's policy (server settings / the `replayPolicyProvider` hook)
+ * chooses the mode; the OSS server only ever emits `'auto'`/`'off'`.
+ */
+export type ReplayMode = 'auto' | 'manual' | 'off';
+
 export interface ReplayOptions {
+  /**
+   * Replay trigger model — `'auto'` (default) / `'off'` / `'manual'`. See
+   * {@link ReplayMode}. Independent of `enabled`: `enabled` is the master gate
+   * (with sampling / level / deny), `mode` chooses WHEN recording is triggered.
+   */
+  mode?: ReplayMode;
   /** Master switch. Default `false`. */
   enabled?: boolean;
   /** Fraction of eligible sessions to record, in [0, 1]. Default `0`. */
