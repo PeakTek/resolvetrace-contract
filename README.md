@@ -45,6 +45,10 @@ This repository intentionally does not contain:
 
 The self-hosted server and managed ResolveTrace deployments are expected to implement the same public contract. Client migration between deployment models should require an endpoint change, not SDK rewrites.
 
+## Feature availability across deployments
+
+One contract, three deployment tiers. The SDK surface is byte-identical everywhere; which capabilities the **server** honors is what differs — so a tier-specific primitive (e.g. `autoCapture.replay.mode: 'manual'` + `client.replay.start()/stop()`) is always safe to call and simply no-ops where the deployment doesn't support it. Baseline features (capture, sessions, auto masked replay, report widget) run on the self-hosted OSS build; consent-gated manual replay and per-tenant replay policy are **ResolveTrace Platform** (managed); dedicated-isolation and SSO/audit-export land in **Enterprise**. See the [SDK feature-availability table](./sdk/typescript/README.md#feature-availability-by-deployment) for the per-capability breakdown.
+
 ## Contributing
 
 Treat interface changes as high-impact changes. Update schemas, specifications, generated artifacts, and changelog entries together.
