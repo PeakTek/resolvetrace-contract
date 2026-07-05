@@ -90,6 +90,9 @@ export class ReplayRecorder {
   private transport: ReplayTransport | null = null;
   private ageTimer: ReturnType<typeof setInterval> | null = null;
   private recordingSessionId: string | null = null;
+  /** Session the recorder is bound to (set on every session change, whether or
+   * not recording starts) — so a later manual `start()` knows which session. */
+  private boundSessionId: string | null = null;
   private starting = false;
 
   /** Observability: chunks the recorder has cut this lifetime. */
@@ -113,17 +116,31 @@ export class ReplayRecorder {
   }
 
   /**
-   * Start recording for `sessionId`, subject to the full policy gate. No-op
-   * (resolves false) when ineligible. Never throws.
+   * Start recording for `sessionId`, subject to the resolved replay `mode` and
+   * the full policy gate. `trigger` says who is asking: `'auto'` (the session
+   * lifecycle) or `'manual'` (a `client.replay.start()` call). Recording only
+   * begins when `mode === trigger` (so `'off'` never records, an auto-trigger
+   * is ignored in `manual` mode, and an explicit start is ignored in `auto`).
+   * No-op (resolves false) when ineligible. Never throws.
    */
-  async start(sessionId: string): Promise<boolean> {
+  async start(
+    sessionId: string,
+    trigger: 'auto' | 'manual' = 'auto',
+  ): Promise<boolean> {
     if (this.starting || this.isRecording) return this.isRecording;
+    // Bind the session even if we don't record it (manual mode needs it later).
+    this.boundSessionId = sessionId;
     this.starting = true;
     try {
       if (!isBrowser()) return false;
 
-      // Apply the tenant-settings override hook (documented seam).
+      // Apply the tenant-settings override hook (documented seam). Resolves the
+      // effective policy, including `mode`.
       await this.applyPolicyProvider();
+
+      // Mode gate: only the matching trigger records. `mode: 'off'` matches
+      // neither trigger, so it never records.
+      if (this.policy.mode !== trigger) return false;
 
       if (!this.eligible()) return false;
 
@@ -213,6 +230,27 @@ export class ReplayRecorder {
       this.report(err);
     }
     this.teardownState();
+  }
+
+  /**
+   * Public manual-mode start (`client.replay.start()`). Begins a capture span
+   * for the bound session — but ONLY when the resolved policy mode is
+   * `'manual'`; a documented no-op in `'auto'`/`'off'`. Resolves to whether
+   * recording is now active. Multiple spans per session are allowed.
+   */
+  async startManual(): Promise<boolean> {
+    if (!this.boundSessionId) return false;
+    return this.start(this.boundSessionId, 'manual');
+  }
+
+  /**
+   * Public manual-mode stop (`client.replay.stop()`). Ends the current manual
+   * capture span. No-op unless the resolved policy mode is `'manual'`, so it
+   * never stops an `'auto'`-mode session recording.
+   */
+  stopManual(): void {
+    if (this.policy.mode !== 'manual') return;
+    this.stop();
   }
 
   // --- internals -----------------------------------------------------------

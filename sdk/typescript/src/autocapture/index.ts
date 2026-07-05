@@ -205,6 +205,34 @@ export class AutoCapture {
     this.installed = false;
   }
 
+  /**
+   * Public manual-mode replay start (`client.replay.start()`). Begins a capture
+   * span when the resolved policy mode is `'manual'`; a no-op otherwise.
+   * Fire-safe; never throws.
+   */
+  async replayStart(): Promise<boolean> {
+    if (!this.replay) return false;
+    try {
+      return await this.replay.startManual();
+    } catch (err) {
+      this.report(err);
+      return false;
+    }
+  }
+
+  /**
+   * Public manual-mode replay stop (`client.replay.stop()`). Ends the current
+   * manual span; a no-op in `'auto'`/`'off'`. Never throws.
+   */
+  replayStop(): void {
+    if (!this.replay) return;
+    try {
+      this.replay.stopManual();
+    } catch (err) {
+      this.report(err);
+    }
+  }
+
   /** Test/observability hook: the live replay recorder, if any. */
   getReplayRecorder(): ReplayRecorder | null {
     return this.replay;

@@ -212,6 +212,7 @@ export const ALLOWED_AUTOCAPTURE_KEYS: ReadonlySet<string> = new Set([
 
 /** Allowed keys inside the `autoCapture.replay` options object (Wave-24). */
 export const ALLOWED_REPLAY_KEYS: ReadonlySet<string> = new Set([
+  'mode',
   'enabled',
   'sampleRate',
   'denyRoutes',

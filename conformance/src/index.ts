@@ -16,6 +16,7 @@ import { schemaCase } from './cases/schema.ts';
 import { idempotencyCase } from './cases/idempotency.ts';
 import { rateLimitCase } from './cases/rate-limit.ts';
 import { replayCase } from './cases/replay.ts';
+import { replayModeCase } from './cases/replay-mode.ts';
 import { maskingParityCase } from './cases/masking-parity.ts';
 import { keyOpacityCase } from './cases/key-opacity.ts';
 import { endpointParityCase } from './cases/endpoint-parity.ts';
@@ -28,6 +29,7 @@ const CASES: readonly CaseDefinition[] = [
   idempotencyCase,
   rateLimitCase,
   replayCase,
+  replayModeCase,
   maskingParityCase,
   keyOpacityCase,
   endpointParityCase,

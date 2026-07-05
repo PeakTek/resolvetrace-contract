@@ -202,6 +202,20 @@ describe('replay policy resolution', () => {
     expect(cfg.masking.maskAllInputs).toBe(true);
   });
 
+  it('defaults mode to auto and passes a valid mode through', () => {
+    expect(defaultReplayConfig().mode).toBe('auto');
+    expect(resolveReplayConfig(true, ALLOWED_REPLAY_KEYS).mode).toBe('auto');
+    expect(resolveReplayConfig({ mode: 'manual' }, ALLOWED_REPLAY_KEYS).mode).toBe('manual');
+    expect(resolveReplayConfig({ mode: 'off' }, ALLOWED_REPLAY_KEYS).mode).toBe('off');
+    expect(ALLOWED_REPLAY_KEYS.has('mode')).toBe(true);
+  });
+
+  it('rejects an invalid replay mode', () => {
+    expect(() =>
+      resolveReplayConfig({ mode: 'sometimes' }, ALLOWED_REPLAY_KEYS),
+    ).toThrow();
+  });
+
   it('masking selectors only extend, never weaken', () => {
     const cfg = resolveReplayConfig(
       { enabled: true, blockSelector: '.secret', maskTextSelector: '.label' },
@@ -632,5 +646,90 @@ describe('replay masking — no raw leakage', () => {
     const text = new TextDecoder().decode(chunk.bytes);
     expect(text).not.toContain(SECRET);
     expect(text).toContain('***');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Replay mode — trigger gating
+// ---------------------------------------------------------------------------
+
+describe('replay mode — trigger gating', () => {
+  let restore: (() => void) | undefined;
+  afterEach(() => {
+    restore?.();
+    restore = undefined;
+  });
+
+  function makeRecorder(
+    mode: 'auto' | 'manual' | 'off',
+    enabled = true,
+  ): ReplayRecorder {
+    const fake = makeFakeRrweb();
+    const { fetchImpl } = makeReplayFetch();
+    return new ReplayRecorder({
+      config: resolveReplayConfig(
+        { enabled, sampleRate: 1, mode },
+        ALLOWED_REPLAY_KEYS,
+      ),
+      endpointUrl: ENDPOINT,
+      apiKey: API_KEY,
+      fetchImpl,
+      rrwebRecord: fake.record,
+      sampler: () => 0, // sampling always passes
+    });
+  }
+
+  it("'auto': session-start records; explicit start/stop are no-ops", async () => {
+    restore = installBrowser('/ok');
+    const r = makeRecorder('auto');
+    expect(await r.start('S', 'auto')).toBe(true);
+    expect(r.isRecording).toBe(true);
+    // Explicit start in auto mode → no-op (already recording).
+    expect(await r.startManual()).toBe(true);
+    // Public stop in auto mode must NOT stop the session recording.
+    r.stopManual();
+    expect(r.isRecording).toBe(true);
+    r.stop();
+  });
+
+  it("'off': never records, from either trigger", async () => {
+    restore = installBrowser('/ok');
+    const r = makeRecorder('off');
+    expect(await r.start('S', 'auto')).toBe(false);
+    expect(await r.startManual()).toBe(false);
+    expect(r.isRecording).toBe(false);
+  });
+
+  it("'manual': session-start does NOT record; start()/stop() drive spans", async () => {
+    restore = installBrowser('/ok');
+    const r = makeRecorder('manual');
+    // The session-lifecycle auto trigger is a no-op — but binds the session.
+    expect(await r.start('S', 'auto')).toBe(false);
+    expect(r.isRecording).toBe(false);
+    // Explicit manual start records the bound session.
+    expect(await r.startManual()).toBe(true);
+    expect(r.isRecording).toBe(true);
+    expect(r.sessionId).toBe('S');
+    // Manual stop ends the span…
+    r.stopManual();
+    expect(r.isRecording).toBe(false);
+    // …and a second span in the same session is allowed.
+    expect(await r.startManual()).toBe(true);
+    expect(r.isRecording).toBe(true);
+    r.stop();
+  });
+
+  it("'manual' still honors the eligibility gate (enabled:false → no record)", async () => {
+    restore = installBrowser('/ok');
+    const r = makeRecorder('manual', /* enabled */ false);
+    await r.start('S', 'auto'); // bind the session
+    expect(await r.startManual()).toBe(false);
+    expect(r.isRecording).toBe(false);
+  });
+
+  it('manual start before any session is a no-op', async () => {
+    restore = installBrowser('/ok');
+    const r = makeRecorder('manual');
+    expect(await r.startManual()).toBe(false);
   });
 });

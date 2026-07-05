@@ -155,6 +155,17 @@ export class ResolveTraceClient {
     restart: () => Ulid;
   };
 
+  /**
+   * Public replay controls. In the default `'auto'` mode replay is
+   * session-driven and these are no-ops; in `'manual'` mode (a
+   * consent/CMP-driven deployment) `start()` begins a capture span and `stop()`
+   * ends it. Portable across deployments: calling them is always safe.
+   */
+  public readonly replay: {
+    start: () => Promise<boolean>;
+    stop: () => void;
+  };
+
   constructor(options: ClientOptions) {
     this.config = resolveConfig(options);
     const fetchImpl = resolveFetch(this.config);
@@ -216,6 +227,12 @@ export class ResolveTraceClient {
         enumerable: true,
         value: () => mgr.restart(),
       },
+    });
+
+    const ac = this.autoCapture;
+    this.replay = Object.defineProperties({} as ResolveTraceClient['replay'], {
+      start: { enumerable: true, value: () => ac.replayStart() },
+      stop: { enumerable: true, value: () => ac.replayStop() },
     });
 
     // Install auto-capture last, once the client is fully wired. Browser-only;

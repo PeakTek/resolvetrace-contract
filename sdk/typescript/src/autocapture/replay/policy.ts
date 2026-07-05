@@ -23,7 +23,7 @@ import {
   REPLAY_ALLOWED_DIAGNOSTICS_LEVELS,
 } from '../../constants.js';
 import { ConfigError } from '../../errors.js';
-import type { DiagnosticsLevel } from '../../types.js';
+import type { DiagnosticsLevel, ReplayMode } from '../../types.js';
 
 /**
  * The rrweb masking configuration. Input + attribute masking are **hard
@@ -49,6 +49,12 @@ export interface ReplayMaskingConfig {
 
 /** Fully-resolved, validated replay policy (browser-only). */
 export interface ResolvedReplayConfig {
+  /**
+   * Trigger model: `'auto'` (default, session-driven) / `'off'`
+   * (never) / `'manual'` (only between `replay.start()` / `replay.stop()`).
+   * Independent of `enabled`, which remains the master gate.
+   */
+  readonly mode: ReplayMode;
   /** Master switch. Default `false` (replay is opt-in / tenant-gated). */
   readonly enabled: boolean;
   /** Fraction of eligible sessions to record, in [0, 1]. Default 0. */
@@ -106,6 +112,7 @@ const DEFAULT_MIN_DIAGNOSTICS_LEVEL: DiagnosticsLevel = 'standard';
 /** The disabled, fully-masked default policy. */
 export function defaultReplayConfig(): ResolvedReplayConfig {
   return {
+    mode: 'auto',
     enabled: false,
     sampleRate: DEFAULT_REPLAY_SAMPLE_RATE,
     denyRoutes: [],
@@ -170,6 +177,18 @@ export function resolveReplayConfig(
           .join(', ')}.`,
       );
     }
+  }
+
+  // mode --------------------------------------------------------------------
+  let mode = defaults.mode;
+  if (opts.mode !== undefined) {
+    if (opts.mode !== 'auto' && opts.mode !== 'manual' && opts.mode !== 'off') {
+      throw new ConfigError(
+        'config.invalid',
+        "`autoCapture.replay.mode` must be one of: 'auto', 'manual', 'off'.",
+      );
+    }
+    mode = opts.mode;
   }
 
   // enabled -----------------------------------------------------------------
@@ -271,6 +290,7 @@ export function resolveReplayConfig(
   }
 
   return {
+    mode,
     enabled,
     sampleRate,
     denyRoutes,
