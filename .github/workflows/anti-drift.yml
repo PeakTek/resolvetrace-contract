@@ -234,7 +234,7 @@ jobs:
 
       - name: Setup Node 20 (with cache)
         if: steps.lockfile.outputs.present == 'true'
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: npm
@@ -242,7 +242,7 @@ jobs:
 
       - name: Setup Node 20 (no cache)
         if: steps.lockfile.outputs.present == 'false'
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
 
