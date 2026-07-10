@@ -95,18 +95,18 @@ Masked session replay is configured under `autoCapture.replay`. The
 - `'manual'` — record **only** between `client.replay.start()` and
   `client.replay.stop()`.
 
-`client.replay.start()` / `stop()` are always safe to call and **portable**:
-they are documented no-ops unless you configure `mode: 'manual'`, so the same
-host-app code runs unchanged everywhere. `start()` resolves `true` only when a
-capture span actually began.
+`client.replay.start()` / `stop()` are always safe to call: they are documented
+no-ops unless you configure `mode: 'manual'`. `start()` resolves `true` only when
+a capture span actually began, and multiple spans per session are allowed.
 
-`mode: 'manual'` is a host setting and the trigger works on **any** deployment.
-What's managed-only is *server-side consent enforcement*: on **ResolveTrace
-Platform** the server admits replay uploads only for sessions with a recorded
-end-user consent decision and rejects the rest (`403`). A self-hosted OSS server
-has no consent gate — it accepts host-triggered manual uploads as-is, so your
-app must call `start()` only after obtaining consent. In short: the manual
-trigger is portable; consent-*gated* replay is a Platform capability.
+**Consent-gated `manual` replay is a ResolveTrace Platform capability.** In
+`manual` mode your app obtains user consent and drives `start()`/`stop()` (e.g.
+from a CMP), and the managed server admits replay only for consented sessions
+(`403` otherwise). On self-hosted OSS, replay is all-or-nothing — use `mode:
+'auto'` or `'off'`; `manual` is not a supported configuration there (an OSS
+server does not enforce consent). The SDK is identical on every deployment;
+choosing the mode that matches your backend is the app developer's
+responsibility.
 
 ## Feature availability by deployment
 
@@ -120,16 +120,14 @@ self-hosted open-source build; some are managed-tier only.
 | Stage-1 PII scrubbing (mask-on-by-default) | ✅ | ✅ | ✅ |
 | Auto (whole-session) masked replay | ✅ | ✅ | ✅ |
 | In-app report widget | ✅ | ✅ | ✅ |
-| Manual replay trigger (`mode:'manual'` + `replay.start()/stop()`) | ✅ | ✅ | ✅ |
-| Server-side consent enforcement (uploads admitted only for consented sessions) | — | ✅ | ✅ |
+| Consent-gated **manual** replay (`mode:'manual'` + `replay.start()/stop()`) | — | ✅ | ✅ |
 | Per-tenant replay policy | — | ✅ | ✅ |
 | SSO / SAML, dedicated isolation, audit export | — | — | soon |
 
-Using a Platform/Enterprise API on an OSS deployment is safe — the primitives
-(`mode`, `replay.start()/stop()`) are host-configured and run everywhere; the
-one difference is that an OSS server does not *enforce* consent on manual
-uploads, so on OSS your app is responsible for calling `start()` only after
-consent.
+The SDK is identical on every deployment — the primitives (`mode`,
+`replay.start()/stop()`) are always present. Choosing the mode that matches your
+backend is the app developer's job: use `manual` only against ResolveTrace
+Platform (which enforces consent), and `auto`/`off` on self-hosted OSS.
 
 ## Sessions
 

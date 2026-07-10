@@ -3,8 +3,10 @@
  *
  * The replay trigger model is a neutral SDK mechanism: the SDK exposes a
  * `mode` of 'auto' | 'manual' | 'off' plus a public `client.replay.start()` /
- * `client.replay.stop()` handle. Which trigger a deployment actually honors is
- * a server/tenant decision — the SDK carries no consent or entitlement logic.
+ * `client.replay.stop()` handle. The app developer sets `mode` to match their
+ * backend; consent-gated `'manual'` is a ResolveTrace Platform capability, while
+ * self-hosted OSS is auto/off-only. The SDK carries no consent or entitlement
+ * logic.
  *
  * This case pins the *public contract* so every SDK build ships the same three
  * modes and the same safe handle shape:
