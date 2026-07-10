@@ -96,14 +96,17 @@ Masked session replay is configured under `autoCapture.replay`. The
   `client.replay.stop()`.
 
 `client.replay.start()` / `stop()` are always safe to call and **portable**:
-they are documented no-ops unless the deployment's policy selects `'manual'`, so
-the same host-app code runs unchanged everywhere. `start()` resolves `true` only
-when a capture span actually began.
+they are documented no-ops unless you configure `mode: 'manual'`, so the same
+host-app code runs unchanged everywhere. `start()` resolves `true` only when a
+capture span actually began.
 
-`'manual'` mode — where a consent flow drives `start()`/`stop()` and the server
-admits replay only for sessions with recorded end-user consent — is a
-**ResolveTrace Platform** capability (see the availability table below).
-Self-hosted OSS is all-or-nothing (`'auto'`/`'off'`).
+`mode: 'manual'` is a host setting and the trigger works on **any** deployment.
+What's managed-only is *server-side consent enforcement*: on **ResolveTrace
+Platform** the server admits replay uploads only for sessions with a recorded
+end-user consent decision and rejects the rest (`403`). A self-hosted OSS server
+has no consent gate — it accepts host-triggered manual uploads as-is, so your
+app must call `start()` only after obtaining consent. In short: the manual
+trigger is portable; consent-*gated* replay is a Platform capability.
 
 ## Feature availability by deployment
 
@@ -117,14 +120,16 @@ self-hosted open-source build; some are managed-tier only.
 | Stage-1 PII scrubbing (mask-on-by-default) | ✅ | ✅ | ✅ |
 | Auto (whole-session) masked replay | ✅ | ✅ | ✅ |
 | In-app report widget | ✅ | ✅ | ✅ |
-| Consent-gated **manual** replay (`mode:'manual'` + `replay.start()/stop()`) | — | ✅ | ✅ |
-| Server-side replay-upload enforcement (end-user consent) | — | ✅ | ✅ |
+| Manual replay trigger (`mode:'manual'` + `replay.start()/stop()`) | ✅ | ✅ | ✅ |
+| Server-side consent enforcement (uploads admitted only for consented sessions) | — | ✅ | ✅ |
 | Per-tenant replay policy | — | ✅ | ✅ |
 | SSO / SAML, dedicated isolation, audit export | — | — | soon |
 
 Using a Platform/Enterprise API on an OSS deployment is safe — the primitives
-(`mode`, `replay.start()/stop()`) stay no-ops there, so there is nothing to
-guard in your app code.
+(`mode`, `replay.start()/stop()`) are host-configured and run everywhere; the
+one difference is that an OSS server does not *enforce* consent on manual
+uploads, so on OSS your app is responsible for calling `start()` only after
+consent.
 
 ## Sessions
 

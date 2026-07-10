@@ -345,22 +345,22 @@ export interface AutoCaptureOptions {
  */
 /**
  * Replay trigger model. A neutral SDK mechanism — no consent or entitlement
- * logic lives here; a deployment decides which trigger it honors:
+ * logic lives here. You choose the trigger in `autoCapture.replay.mode`:
  *   - `'auto'`   — record the whole session automatically (the default).
  *   - `'off'`    — never record.
  *   - `'manual'` — record ONLY between `client.replay.start()` and
  *     `client.replay.stop()`. `start()`/`stop()` are documented no-ops in the
  *     other two modes, so host-app code that calls them stays portable.
- * The deployment's policy chooses the mode; the SDK carries no tier or consent
- * logic of its own.
  *
- * **Availability.** `'auto'` and `'off'` work on every deployment, including
- * self-hosted OSS (`resolvetrace-core`), which is all-or-nothing — its server
- * only ever emits those two. `'manual'` — consent-gated recording, where the
- * server admits captured replay only for sessions with recorded end-user
- * consent and rejects the rest — is a **ResolveTrace Platform** (managed)
- * capability, honored end-to-end there. On a self-hosted deployment the server
- * never selects `'manual'`, so `start()`/`stop()` remain no-ops.
+ * **Availability.** All three modes are host-configured and run on every
+ * deployment — the `'manual'` trigger behaves the same on self-hosted OSS
+ * (`resolvetrace-core`) as on the managed backend. What differs is *server-side
+ * consent enforcement*: on **ResolveTrace Platform** (managed) the server admits
+ * captured replay only for sessions with a recorded end-user consent decision
+ * and rejects the rest (`403`). Self-hosted OSS core has no such gate — it
+ * accepts host-triggered `'manual'` uploads as-is, so your app is responsible
+ * for calling `start()` only after obtaining consent. Consent-*gated* replay is
+ * therefore a Platform capability; the `'manual'` trigger itself is portable.
  */
 export type ReplayMode = 'auto' | 'manual' | 'off';
 
@@ -370,8 +370,9 @@ export interface ReplayOptions {
    * {@link ReplayMode}. Independent of `enabled`: `enabled` is the master gate
    * (with sampling / level / deny), `mode` chooses WHEN recording is triggered.
    *
-   * `'auto'`/`'off'` work on any deployment; `'manual'` (consent-gated) is a
-   * **ResolveTrace Platform** capability — see {@link ReplayMode} for the split.
+   * All three run on any deployment; only server-side consent *enforcement* of
+   * `'manual'` uploads is a **ResolveTrace Platform** capability — see
+   * {@link ReplayMode} for the split.
    */
   mode?: ReplayMode;
   /** Master switch. Default `false`. */
