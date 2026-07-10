@@ -158,16 +158,16 @@ export class ResolveTraceClient {
   /**
    * Public replay controls. In the default `'auto'` mode replay is
    * session-driven and these are no-ops; set `autoCapture.replay.mode:
-   * 'manual'` and `start()` begins a capture span while `stop()` ends it.
-   * Portable across deployments: calling them is always safe.
+   * 'manual'` and `start()` begins a capture span while `stop()` ends it
+   * (multiple spans per session are allowed). Calling them is always safe.
    *
    * `'manual'` mode — where a consent flow (e.g. a CMP) drives `start()`/
-   * `stop()` — is host-configured and works on any deployment. Only the
-   * server-side *enforcement* (admitting replay uploads only for sessions with
-   * recorded end-user consent) is a **ResolveTrace Platform** capability; a
-   * self-hosted OSS server has no consent gate, so it accepts host-triggered
-   * manual uploads as-is (call `start()` only after consent). `start()`
-   * resolves `true` only when a span actually began. See {@link ReplayMode}.
+   * `stop()` and your app obtains user consent — is a **ResolveTrace Platform**
+   * capability: the managed server admits replay only for consented sessions.
+   * On self-hosted OSS, replay is all-or-nothing — use `'auto'`/`'off'`;
+   * `'manual'` is not supported there (no consent gate). Pick the mode that
+   * matches your backend. `start()` resolves `true` only when a span actually
+   * began. See {@link ReplayMode}.
    */
   public readonly replay: {
     start: () => Promise<boolean>;

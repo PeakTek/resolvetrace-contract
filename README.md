@@ -47,7 +47,7 @@ The self-hosted server and managed ResolveTrace deployments are expected to impl
 
 ## Feature availability across deployments
 
-One contract, three deployment tiers. The SDK surface is byte-identical everywhere; which capabilities the **server** honors is what differs — so a host-set primitive (e.g. `autoCapture.replay.mode: 'manual'` + `client.replay.start()/stop()`) is always safe to call: the manual trigger runs everywhere, and only its server-side consent *enforcement* is managed-only. Baseline features (capture, sessions, auto masked replay, report widget) run on the self-hosted OSS build; server-side consent enforcement and per-tenant replay policy are **ResolveTrace Platform** (managed); dedicated-isolation and SSO/audit-export land in **Enterprise**. See the [SDK feature-availability table](./sdk/typescript/README.md#feature-availability-by-deployment) for the per-capability breakdown.
+One contract, three deployment tiers. The SDK surface is byte-identical everywhere; which capabilities the **server** honors is what differs — so a host-set primitive (e.g. `autoCapture.replay.mode: 'manual'` + `client.replay.start()/stop()`) is always safe to call, and the app developer picks the mode matching their backend. Baseline features (capture, sessions, auto masked replay, report widget) run on the self-hosted OSS build; consent-gated **manual** replay and per-tenant replay policy are **ResolveTrace Platform** (managed); dedicated-isolation and SSO/audit-export land in **Enterprise**. See the [SDK feature-availability table](./sdk/typescript/README.md#feature-availability-by-deployment) for the per-capability breakdown.
 
 ## Contributing
 

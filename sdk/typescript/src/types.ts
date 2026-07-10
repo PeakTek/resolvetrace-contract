@@ -352,15 +352,15 @@ export interface AutoCaptureOptions {
  *     `client.replay.stop()`. `start()`/`stop()` are documented no-ops in the
  *     other two modes, so host-app code that calls them stays portable.
  *
- * **Availability.** All three modes are host-configured and run on every
- * deployment — the `'manual'` trigger behaves the same on self-hosted OSS
- * (`resolvetrace-core`) as on the managed backend. What differs is *server-side
- * consent enforcement*: on **ResolveTrace Platform** (managed) the server admits
- * captured replay only for sessions with a recorded end-user consent decision
- * and rejects the rest (`403`). Self-hosted OSS core has no such gate — it
- * accepts host-triggered `'manual'` uploads as-is, so your app is responsible
- * for calling `start()` only after obtaining consent. Consent-*gated* replay is
- * therefore a Platform capability; the `'manual'` trigger itself is portable.
+ * **Availability.** The SDK ships the same on every deployment and includes all
+ * three modes, but **consent-gated `'manual'` replay is a ResolveTrace Platform
+ * (managed) capability**: host-driven `start()`/`stop()` (multiple spans per
+ * session) where your app obtains user consent and the managed server admits
+ * captured replay only for consented sessions (`403` otherwise). Self-hosted OSS
+ * is all-or-nothing — use `'auto'` or `'off'` there; `'manual'` is not a
+ * supported configuration on OSS (its server does not enforce consent). Choosing
+ * the mode that matches the backend you target is the app developer's
+ * responsibility; the SDK neither self-detects the tier nor queries the server.
  */
 export type ReplayMode = 'auto' | 'manual' | 'off';
 
@@ -370,9 +370,9 @@ export interface ReplayOptions {
    * {@link ReplayMode}. Independent of `enabled`: `enabled` is the master gate
    * (with sampling / level / deny), `mode` chooses WHEN recording is triggered.
    *
-   * All three run on any deployment; only server-side consent *enforcement* of
-   * `'manual'` uploads is a **ResolveTrace Platform** capability — see
-   * {@link ReplayMode} for the split.
+   * The SDK ships all three everywhere, but consent-gated `'manual'` is a
+   * **ResolveTrace Platform** capability; on self-hosted OSS use `'auto'`/`'off'`.
+   * The developer picks the mode matching their backend — see {@link ReplayMode}.
    */
   mode?: ReplayMode;
   /** Master switch. Default `false`. */
