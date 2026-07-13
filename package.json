@@ -24,7 +24,7 @@
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^15.4.0",
     "@seriousme/openapi-schema-validator": "^2.4.0",
-    "@sinclair/typebox": "^0.34.49",
+    "@sinclair/typebox": "^0.34.52",
     "@types/node": "^26.0.1",
     "prettier": "^3.9.4",
     "tsx": "^4.19.0",
