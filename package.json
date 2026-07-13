@@ -22,7 +22,7 @@
     "ajv-formats": "^3.0.1"
   },
   "devDependencies": {
-    "@apidevtools/json-schema-ref-parser": "^15.4.0",
+    "@apidevtools/json-schema-ref-parser": "^15.5.0",
     "@seriousme/openapi-schema-validator": "^2.4.0",
     "@sinclair/typebox": "^0.34.49",
     "@types/node": "^26.0.1",
