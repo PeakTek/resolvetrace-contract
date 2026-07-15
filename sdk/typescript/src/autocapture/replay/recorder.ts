@@ -93,6 +93,15 @@ export class ReplayRecorder {
   /** Session the recorder is bound to (set on every session change, whether or
    * not recording starts) — so a later manual `start()` knows which session. */
   private boundSessionId: string | null = null;
+  /**
+   * High-water mark for replay chunk sequence numbers. Chunks are keyed by
+   * `(sessionId, sequence)` server-side, so the sequence must CONTINUE across
+   * manual start/stop spans within one session — otherwise a later span reuses
+   * `0, 1, …` and overwrites the earlier recording. Reset only when the session
+   * itself changes (tracked by `replaySequenceSessionId`).
+   */
+  private replaySequence = 0;
+  private replaySequenceSessionId: string | null = null;
   private starting = false;
 
   /** Observability: chunks the recorder has cut this lifetime. */
@@ -158,7 +167,17 @@ export class ReplayRecorder {
         scrubber,
         reportError: this.deps.reportError,
       });
-      this.chunker = new ReplayChunker({ sessionId });
+      // Continue the chunk sequence across spans in the same session; reset only
+      // when the session changes — so a second recording doesn't overwrite the
+      // first (chunks are keyed by `(sessionId, sequence)` server-side).
+      if (this.replaySequenceSessionId !== sessionId) {
+        this.replaySequence = 0;
+        this.replaySequenceSessionId = sessionId;
+      }
+      this.chunker = new ReplayChunker({
+        sessionId,
+        startSequence: this.replaySequence,
+      });
       this.recordingSessionId = sessionId;
 
       const m = this.policy.masking;
@@ -371,6 +390,9 @@ export class ReplayRecorder {
       clearInterval(this.ageTimer);
       this.ageTimer = null;
     }
+    // Preserve the chunk-sequence high-water mark so the next span in this
+    // session continues from here instead of overwriting from 0.
+    if (this.chunker) this.replaySequence = this.chunker.nextSeq;
     this.chunker = null;
     this.transport = null;
     this.recordingSessionId = null;

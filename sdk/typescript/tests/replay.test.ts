@@ -322,6 +322,18 @@ describe('replay chunker', () => {
     const chunk = c.flush()!;
     expect(chunk.byteLength).toBe(chunk.bytes.length);
   });
+
+  it('continues numbering from startSequence (multi-span session)', () => {
+    // A later capture span in the same session seeds the chunker with the prior
+    // high-water mark, so chunks never reuse a `(sessionId, sequence)` key and
+    // overwrite the earlier recording.
+    const c = new ReplayChunker({ sessionId: 'S', startSequence: 3 });
+    expect(c.nextSeq).toBe(3);
+    c.add({ type: 2, data: {} });
+    const chunk = c.flush()!;
+    expect(chunk.sequence).toBe(3);
+    expect(c.nextSeq).toBe(4);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -546,6 +558,43 @@ describe('replay recorder', () => {
     const m = completes[0]!.body as Record<string, unknown>;
     expect(m.sessionId).toBe('SESS');
     expect(m.sequence).toBe(0);
+  });
+
+  it('continues chunk sequence across spans in one session (no overwrite)', async () => {
+    restore = installBrowser('/ok');
+    const fake = makeFakeRrweb();
+    const { fetchImpl, calls } = makeReplayFetch();
+    const r = new ReplayRecorder({
+      config: resolveReplayConfig({ enabled: true, sampleRate: 1 }, ALLOWED_REPLAY_KEYS),
+      endpointUrl: ENDPOINT,
+      apiKey: API_KEY,
+      fetchImpl,
+      rrwebRecord: fake.record,
+      sampler: () => 0,
+    });
+
+    // Span 1
+    expect(await r.start('SESS')).toBe(true);
+    fake.emit({ type: 2, data: { node: { tagName: 'a' } } });
+    r.stop();
+    await waitFor(
+      () => calls.filter((x) => x.url.includes('/v1/replay/complete')).length >= 1,
+    );
+
+    // Span 2 — a second recording in the SAME session.
+    expect(await r.start('SESS')).toBe(true);
+    fake.emit({ type: 2, data: { node: { tagName: 'b' } } });
+    r.stop();
+    await waitFor(
+      () => calls.filter((x) => x.url.includes('/v1/replay/complete')).length >= 2,
+    );
+
+    const seqs = calls
+      .filter((x) => x.url.includes('/v1/replay/complete'))
+      .map((x) => (x.body as { sequence: number }).sequence);
+    // Distinct, continuing sequence numbers — the second span does NOT reuse
+    // `(SESS, 0)` and overwrite the first recording.
+    expect(seqs).toEqual([0, 1]);
   });
 
   it('teardown stops recording (stop is idempotent)', async () => {
