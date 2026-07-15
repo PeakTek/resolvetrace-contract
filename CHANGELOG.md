@@ -6,7 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-*No changes yet.*
+### Fixed
+- TypeScript SDK: masked replay now **continues chunk sequence numbers across
+  capture spans within a session**. Previously each `replay.start()` built a
+  fresh chunker numbered from `0`, so a second recording in the same session
+  reused `(sessionId, sequence)` keys and **overwrote** the first on the server —
+  only the latest span was retrievable. The recorder now carries a per-session
+  sequence high-water mark and seeds each span's chunker with it (resetting only
+  when the session itself changes).
 
 ## [0.2.0] — 2026-06-28
 

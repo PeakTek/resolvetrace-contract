@@ -43,6 +43,14 @@ export interface ChunkerOptions {
   readonly softBytes?: number;
   readonly maxBytes?: number;
   readonly maxAgeMs?: number;
+  /**
+   * First sequence number to assign (default `0`). Chunks are keyed by
+   * `(sessionId, sequence)` server-side, so a session with multiple capture
+   * spans (manual `replay.start()` / `stop()`) must continue numbering across
+   * chunker instances rather than restart at `0` — otherwise a later span
+   * overwrites the earlier one. The recorder passes the running high-water mark.
+   */
+  readonly startSequence?: number;
   /** Injectable clock for tests. */
   readonly now?: () => number;
 }
@@ -61,8 +69,8 @@ export class ReplayChunker {
   /** Running estimate of the serialized size of `buffer` (bytes). */
   private bufferBytes = 0;
   private openedAtMs: number | null = null;
-  /** Next sequence number to assign. */
-  private nextSequence = 0;
+  /** Next sequence number to assign (seeded from `startSequence`). */
+  private nextSequence: number;
   /** Count of events dropped because a single event exceeded the cap. */
   public droppedOversizeEvents = 0;
 
@@ -71,12 +79,22 @@ export class ReplayChunker {
     this.softBytes = opts.softBytes ?? REPLAY_CHUNK_SOFT_BYTES;
     this.maxBytes = opts.maxBytes ?? REPLAY_MAX_CHUNK_BYTES;
     this.maxAgeMs = opts.maxAgeMs ?? REPLAY_CHUNK_MAX_AGE_MS;
+    this.nextSequence = opts.startSequence ?? 0;
     this.now = opts.now ?? (() => Date.now());
   }
 
   /** Number of events currently buffered (not yet cut). */
   get pendingEvents(): number {
     return this.buffer.length;
+  }
+
+  /**
+   * The next sequence number this chunker will assign — its high-water mark.
+   * The recorder reads this when a span ends so the next span continues the
+   * numbering (see `ChunkerOptions.startSequence`).
+   */
+  get nextSeq(): number {
+    return this.nextSequence;
   }
 
   /**
