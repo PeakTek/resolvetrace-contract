@@ -198,6 +198,7 @@ class FakeEl {
   placeholder = '';
   className = '';
   hidden = false;
+  disabled = false;
   parentNode: FakeEl | null = null;
   readonly style: Record<string, string> = {};
   readonly children: FakeEl[] = [];
@@ -592,6 +593,141 @@ describe('mountReportWidget — record mode', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Widget — refinements: launcher, submit feedback + auto-close, consent, drag
+// ---------------------------------------------------------------------------
+
+describe('mountReportWidget — refinements', () => {
+  let dom: { restore: () => void; doc: FakeDocument };
+  beforeEach(() => {
+    dom = installDom();
+  });
+  afterEach(() => {
+    dom.restore();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const click = (el: unknown): void => (el as unknown as FakeEl).click();
+
+  it("launcher 'icon' renders a compact glyph button with an aria-label; 'button' shows text", () => {
+    const iconH = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X') },
+      { launcher: 'icon', buttonText: 'Report' },
+    );
+    const iconBtn = iconH.root!.byRole('button')!;
+    expect(iconBtn.textContent).not.toBe('Report'); // a glyph, not the label
+    expect(iconBtn.getAttribute('aria-label')).toBe('Report');
+    iconH.destroy();
+
+    const textH = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X') },
+      { launcher: 'button', buttonText: 'Report' },
+    );
+    expect(textH.root!.byRole('button')!.textContent).toBe('Report');
+    textH.destroy();
+  });
+
+  it("launcher 'none' mounts no floating button but handle.open() still shows the panel", () => {
+    const h = mountReportWidget({ reportProblem: vi.fn(() => 'X') }, { launcher: 'none' });
+    const root = h.root!;
+    expect(root.byRole('button')).toBeNull(); // no floating launcher
+    const panel = root.byRole('panel') as unknown as FakeEl;
+    expect(panel.hidden).toBe(true);
+    h.open();
+    expect(panel.hidden).toBe(false);
+    h.destroy();
+  });
+
+  it('recording Submit disables immediately + shows the sending label (no double-submit)', async () => {
+    const { rec } = fakeRecorder();
+    const h = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' }, sendingText: 'Sending…' },
+    );
+    const root = h.root!;
+    click(root.byRole('record'));
+    await settle();
+
+    const submitBtn = root.byRole('record-submit') as unknown as FakeEl;
+    click(submitBtn); // synchronous prefix runs: disable + label
+    expect(submitBtn.disabled).toBe(true);
+    expect(submitBtn.textContent).toBe('Sending…');
+
+    // A second click while sending is ignored (submitting guard).
+    click(submitBtn);
+    await settle();
+    expect(rec.submit).toHaveBeenCalledTimes(1);
+    h.destroy();
+  });
+
+  it('text Send report shows success then auto-closes after ~1.5s', () => {
+    vi.useFakeTimers();
+    const reportProblem = vi.fn(() => 'EVENTID01234567890123456789');
+    const h = mountReportWidget({ reportProblem });
+    const root = h.root!;
+    click(root.byRole('button')); // open
+    (root.byRole('textarea') as unknown as FakeEl).value = 'busted';
+    const submitBtn = root.byRole('submit') as unknown as FakeEl;
+    click(submitBtn);
+
+    const panel = root.byRole('panel') as unknown as FakeEl;
+    const status = root.byRole('status') as unknown as FakeEl;
+    expect(status.hidden).toBe(false); // success shown
+    expect(submitBtn.disabled).toBe(true); // disabled during the window
+    expect(panel.hidden).toBe(false); // not closed yet
+
+    vi.advanceTimersByTime(1500);
+    expect(panel.hidden).toBe(true); // auto-closed
+    h.destroy();
+  });
+
+  it('renders the consent notice + a safe policy link above Record', () => {
+    const { rec } = fakeRecorder();
+    const h = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      {
+        record: { clips: 'multi' },
+        consentNotice: 'Submitting means you consent.',
+        policyUrl: 'https://example.com/privacy',
+        policyLinkText: 'Privacy Policy',
+      },
+    );
+    const root = h.root!;
+    const consent = root.byRole('consent')!;
+    expect(consent).not.toBeNull();
+    expect(consent.children.some((c) => c.textContent.includes('consent'))).toBe(true);
+    const link = root.byRole('policy-link')!;
+    expect(link.getAttribute('href')).toBe('https://example.com/privacy');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel') ?? '').toContain('noopener');
+    expect(link.textContent).toBe('Privacy Policy');
+    h.destroy();
+  });
+
+  it('omits the consent block when no notice/url is given', () => {
+    const { rec } = fakeRecorder();
+    const h = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' } },
+    );
+    expect(h.root!.byRole('consent')).toBeNull();
+    expect(h.root!.byRole('policy-link')).toBeNull();
+    h.destroy();
+  });
+
+  it('the status pill is a drag handle (cursor: grab)', () => {
+    const { rec } = fakeRecorder();
+    const h = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' } },
+    );
+    const pill = h.root!.byRole('record-status') as unknown as FakeEl;
+    expect(pill.style.cursor).toBe('grab');
+    h.destroy();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Config validation for the reportWidget option + client auto-mount
 // ---------------------------------------------------------------------------
 
@@ -681,5 +817,40 @@ describe('reportWidget config', () => {
     // The floating root mounted; the record button is present (recorder wired).
     const root = dom.doc.body.children[0]!;
     expect(root.byRole('record')).not.toBeNull();
+  });
+
+  it('accepts launcher + consent options; rejects a bad launcher / unsafe policyUrl', () => {
+    const t = recordingTransport();
+    expect(() =>
+      createClient({
+        apiKey: 'rt_test',
+        endpoint: ENDPOINT,
+        transport: t.fetch,
+        reportWidget: {
+          launcher: 'icon',
+          consentNotice: 'ok',
+          policyUrl: 'https://x/p',
+          policyLinkText: 'Policy',
+        },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      createClient({
+        apiKey: 'rt_test',
+        endpoint: ENDPOINT,
+        transport: t.fetch,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        reportWidget: { launcher: 'floaty' } as any,
+      }),
+    ).toThrow();
+    expect(() =>
+      createClient({
+        apiKey: 'rt_test',
+        endpoint: ENDPOINT,
+        transport: t.fetch,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        reportWidget: { policyUrl: 'javascript:alert(1)' } as any,
+      }),
+    ).toThrow();
   });
 });

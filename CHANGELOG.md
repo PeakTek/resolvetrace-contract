@@ -21,6 +21,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   widget drives a neutral `recorder` surface; mount-time `onRecordStart` /
   `onBeforeSubmit` hooks let the host arrange consent (fail-closed: a rejection
   aborts recording / submit).
+- TypeScript SDK: report-widget launcher + consent options —
+  `reportWidget.launcher: 'button' | 'icon' | 'none'` (compact icon, or no
+  floating launcher so the host opens it via the mount handle's `open()`); and
+  `consentNotice` + `policyUrl` + `policyLinkText` render a consent line and a
+  (scheme-validated) Privacy Policy / Terms link above the Record button.
+
+### Changed
+- TypeScript SDK: the report widget now **confirms then auto-closes** after a
+  send/submit. Clicking Submit (recording) or Send report (text) immediately
+  disables the button and shows a `sendingText` ("Sending…") label, then a brief
+  success confirmation, then hides after ~1.5s — closing the window where a slow
+  upload invited a double-submit. The recording controls bar is also
+  **draggable** by its status pill (the masked frame stays put).
 
 ### Fixed
 - TypeScript SDK: masked replay now **continues chunk sequence numbers across

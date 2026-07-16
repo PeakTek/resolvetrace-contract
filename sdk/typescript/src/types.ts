@@ -414,6 +414,15 @@ export type ReportWidgetPosition =
   | 'top-right'
   | 'top-left';
 
+/**
+ * How the widget's floating launcher renders:
+ *   - `'button'` (default) — a labelled pill.
+ *   - `'icon'`   — a compact circular icon button.
+ *   - `'none'`   — no floating launcher; open it yourself via the mount handle's
+ *     `open()` (e.g. from your own page button).
+ */
+export type ReportWidgetLauncher = 'button' | 'icon' | 'none';
+
 /** Clip-curation granularity for the widget's record mode. */
 export type ReportWidgetClipMode = 'single' | 'multi';
 
@@ -477,6 +486,24 @@ export interface ReportWidgetOptions {
   recordingLabel?: string;
   /** Status label shown while paused. Default `'Paused'`. */
   pausedLabel?: string;
+  /** How the floating launcher renders — pill / compact icon / none. Default `'button'`. */
+  launcher?: ReportWidgetLauncher;
+  /** In-flight label shown on the submit button while a report/recording sends. Default `'Sending…'`. */
+  sendingText?: string;
+  /**
+   * Consent notice shown above the Record button (record mode) — e.g.
+   * "Submitting a recording means you consent to it being captured." Rendered
+   * only when set.
+   */
+  consentNotice?: string;
+  /**
+   * URL for a Privacy Policy / Terms link shown beside the consent notice. Must
+   * be `http(s)://…` or a `/`-relative path (other schemes are rejected). When
+   * set, a link is rendered; otherwise just the `consentNotice` text.
+   */
+  policyUrl?: string;
+  /** Label for the `policyUrl` link. Default `'Privacy Policy'`. */
+  policyLinkText?: string;
 }
 
 /** Options accepted by the `ResolveTraceClient` constructor. */

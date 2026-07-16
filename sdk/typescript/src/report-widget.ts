@@ -17,9 +17,23 @@
  */
 
 import type { ReportProblemInput } from './report.js';
-import type { ReportWidgetOptions, ReportWidgetPosition } from './types.js';
+import type {
+  ReportWidgetOptions,
+  ReportWidgetPosition,
+  ReportWidgetLauncher,
+} from './types.js';
 
-export type { ReportWidgetOptions, ReportWidgetPosition } from './types.js';
+export type {
+  ReportWidgetOptions,
+  ReportWidgetPosition,
+  ReportWidgetLauncher,
+} from './types.js';
+
+/** Milliseconds a success confirmation shows before the widget auto-closes. */
+const REPORT_WIDGET_AUTOCLOSE_MS = 1500;
+
+/** Compact-launcher glyph (BMP, widely rendered; restyle via `className`). */
+const REPORT_WIDGET_ICON_GLYPH = '⚑';
 
 /** One buffered replay clip surfaced to the widget's curation UI (neutral). */
 export interface ReportWidgetClip {
@@ -188,6 +202,11 @@ export function mountReportWidget(
     discardText: options.discardText ?? 'Discard',
     recordingLabel: options.recordingLabel ?? 'Recording',
     pausedLabel: options.pausedLabel ?? 'Paused',
+    launcher: options.launcher ?? 'button',
+    sendingText: options.sendingText ?? 'Sending…',
+    consentNotice: options.consentNotice,
+    policyUrl: options.policyUrl,
+    policyLinkText: options.policyLinkText ?? 'Privacy Policy',
   } as const;
 
   try {
@@ -221,6 +240,11 @@ interface ResolvedWidgetOptions {
   discardText: string;
   recordingLabel: string;
   pausedLabel: string;
+  launcher: ReportWidgetLauncher;
+  sendingText: string;
+  consentNotice?: string | undefined;
+  policyUrl?: string | undefined;
+  policyLinkText: string;
 }
 
 function build(
@@ -246,23 +270,46 @@ function build(
     });
   }
 
-  // Floating button.
+  // Floating launcher button. `launcher: 'icon'` → compact circle; `'none'` →
+  // not appended (the host opens the widget via the mount handle's `open()`).
   const button = doc.createElement('button');
   button.type = 'button';
   button.setAttribute('data-rt-report', 'button');
-  button.textContent = opts.buttonText;
   button.setAttribute('aria-haspopup', 'dialog');
+  const iconLauncher = opts.launcher === 'icon';
+  if (iconLauncher) {
+    button.textContent = REPORT_WIDGET_ICON_GLYPH;
+    button.setAttribute('aria-label', opts.buttonText);
+  } else {
+    button.textContent = opts.buttonText;
+  }
   if (styled) {
-    applyStyle(button, {
-      cursor: 'pointer',
-      border: 'none',
-      borderRadius: '999px',
-      padding: '10px 16px',
-      fontSize: '14px',
-      background: '#1f2937',
-      color: '#ffffff',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-    });
+    applyStyle(
+      button,
+      iconLauncher
+        ? {
+            cursor: 'pointer',
+            border: 'none',
+            borderRadius: '999px',
+            width: '44px',
+            height: '44px',
+            padding: '0',
+            fontSize: '18px',
+            background: '#1f2937',
+            color: '#ffffff',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+          }
+        : {
+            cursor: 'pointer',
+            border: 'none',
+            borderRadius: '999px',
+            padding: '10px 16px',
+            fontSize: '14px',
+            background: '#1f2937',
+            color: '#ffffff',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+          },
+    );
   }
 
   // Form panel (hidden until opened).
@@ -368,13 +415,53 @@ function build(
     }
   }
 
+  /** Build a consent notice (+ optional policy link). Fresh node per call. */
+  function buildConsentEl(compact: boolean): HTMLDivElement | null {
+    if (!opts.consentNotice && !opts.policyUrl) return null;
+    const el = doc.createElement('div');
+    el.setAttribute('data-rt-report', compact ? 'record-consent' : 'consent');
+    if (styled) {
+      applyStyle(
+        el,
+        compact
+          ? { fontSize: '11px', color: '#cbd5e1', marginTop: '2px', maxWidth: '260px' }
+          : { fontSize: '12px', color: '#4b5563', marginTop: '10px' },
+      );
+    }
+    if (opts.consentNotice) {
+      const t = doc.createElement('span');
+      t.textContent = `${opts.consentNotice} `;
+      el.appendChild(t);
+    }
+    if (opts.policyUrl) {
+      const a = doc.createElement('a');
+      a.setAttribute('data-rt-report', compact ? 'record-policy-link' : 'policy-link');
+      a.setAttribute('href', opts.policyUrl);
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+      a.textContent = opts.policyLinkText;
+      if (styled) {
+        applyStyle(a, {
+          color: compact ? '#93c5fd' : '#2563eb',
+          textDecoration: 'underline',
+        });
+      }
+      el.appendChild(a);
+    }
+    return el;
+  }
+
   panel.appendChild(heading);
   panel.appendChild(textarea);
   panel.appendChild(status);
+  // Consent notice + policy link, above the Record button (record mode only).
+  const panelConsent = rec ? buildConsentEl(false) : null;
+  if (panelConsent) panel.appendChild(panelConsent);
   if (recordButton) panel.appendChild(recordButton);
   panel.appendChild(submit);
   root.appendChild(panel);
-  root.appendChild(button);
+  // `launcher: 'none'` → no floating button; the host triggers via handle.open().
+  if (opts.launcher !== 'none') root.appendChild(button);
 
   function setStatus(message: string, kind: 'ok' | 'error'): void {
     try {
@@ -425,6 +512,50 @@ function build(
     else doOpen();
   }
 
+  // --- Submit feedback + auto-close ----------------------------------------
+  let autoCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  function clearAutoClose(): void {
+    if (autoCloseTimer !== null) {
+      try {
+        clearTimeout(autoCloseTimer);
+      } catch {
+        /* ignore */
+      }
+      autoCloseTimer = null;
+    }
+  }
+  function scheduleClose(fn: () => void): void {
+    clearAutoClose();
+    try {
+      autoCloseTimer = setTimeout(() => {
+        autoCloseTimer = null;
+        if (destroyed) return;
+        try {
+          fn();
+        } catch {
+          /* ignore */
+        }
+      }, REPORT_WIDGET_AUTOCLOSE_MS);
+      const t = autoCloseTimer as unknown as { unref?: () => void };
+      if (typeof t?.unref === 'function') t.unref();
+    } catch {
+      autoCloseTimer = null;
+    }
+  }
+  /** Disable/enable an action button (+ optional label) so a click can't repeat. */
+  function setBusy(el: HTMLButtonElement | null, busy: boolean, text?: string): void {
+    if (!el) return;
+    try {
+      el.disabled = busy;
+      if (styled) {
+        applyStyle(el, { opacity: busy ? '0.6' : '1', cursor: busy ? 'default' : 'pointer' });
+      }
+      if (text !== undefined) el.textContent = text;
+    } catch {
+      /* ignore */
+    }
+  }
+
   function onSubmit(): void {
     if (destroyed) return;
     let description = '';
@@ -446,6 +577,12 @@ function build(
         } catch {
           /* ignore */
         }
+        // Confirm, then auto-close so the user isn't left wondering / re-sending.
+        setBusy(submit, true);
+        scheduleClose(() => {
+          setBusy(submit, false, opts.submitText);
+          doClose();
+        });
       } else {
         // Empty id means the capture was dropped (e.g. no active session).
         setStatus(opts.errorText, 'error');
@@ -458,6 +595,7 @@ function build(
   // --- Record-mode state machine (idle → recording → paused → submitted) ---
   type RecState = 'idle' | 'recording' | 'paused' | 'submitted';
   let recState: RecState = 'idle';
+  let submitting = false; // guards against a double-submit during the upload
   let tick: ReturnType<typeof setInterval> | null = null;
   let elapsedBaseMs = 0; // accumulated recorded time (excludes paused gaps)
   let segmentStartMs = 0; // wall-clock when the current recording segment began
@@ -579,6 +717,13 @@ function build(
 
   async function onRecordClick(): Promise<void> {
     if (!rec || recState === 'recording' || recState === 'paused') return;
+    // A fresh recording cancels any pending post-submit auto-close and re-enables
+    // the controls (so a record right after a submit starts clean).
+    clearAutoClose();
+    submitting = false;
+    setBusy(submitClipsButton, false, opts.submitClipsText);
+    setBusy(pauseButton, false);
+    setBusy(discardButton, false);
     // Fail-closed consent hook: if it rejects, do NOT start capturing.
     try {
       if (opts.onRecordStart) await opts.onRecordStart();
@@ -646,7 +791,12 @@ function build(
   }
 
   async function onSubmitClips(): Promise<void> {
-    if (!rec) return;
+    if (!rec || recState === 'submitted' || submitting) return;
+    submitting = true;
+    // Block a double-submit the instant we start — the upload can take a moment.
+    setBusy(submitClipsButton, true, opts.sendingText);
+    setBusy(pauseButton, true);
+    setBusy(discardButton, true);
     if (recState === 'recording') {
       try {
         rec.stop();
@@ -656,26 +806,41 @@ function build(
       elapsedBaseMs += Math.max(0, nowMs() - segmentStartMs);
     }
     stopTick();
-    // Pre-submit hook (e.g. record consent). Reject → keep clips, stay paused.
+    setPillText(`● ${opts.sendingText}`);
+    // Pre-submit hook (e.g. record consent). Reject → keep clips, re-enable.
     try {
       if (opts.onBeforeSubmit) await opts.onBeforeSubmit();
     } catch {
+      submitting = false;
       recState = 'paused';
       setOverlayStyle();
       showRecordingUi();
+      setBusy(submitClipsButton, false, opts.submitClipsText);
+      setBusy(pauseButton, false);
+      setBusy(discardButton, false);
       updatePauseButton();
       setPillText(opts.errorText);
       return;
     }
+    let ok = true;
     try {
       await rec.submit();
     } catch {
-      /* the SDK submit is itself never-throw; ignore defensively */
+      ok = false; // the SDK submit is itself never-throw; defensive only
     }
+    // Confirm briefly, then hide + reset so a later recording starts clean.
     recState = 'submitted';
-    hideRecordingUi();
-    doOpen();
-    setStatus(opts.successText, 'ok');
+    setPillText(ok ? '✓ Sent' : opts.errorText);
+    scheduleClose(() => {
+      hideRecordingUi();
+      setBusy(submitClipsButton, false, opts.submitClipsText);
+      setBusy(pauseButton, false);
+      setBusy(discardButton, false);
+      recState = 'idle';
+      elapsedBaseMs = 0;
+      submitting = false;
+      renderClips();
+    });
   }
 
   function onDiscardClick(): void {
@@ -749,6 +914,64 @@ function build(
     statusPill.setAttribute('aria-live', 'polite');
     statusPill.textContent = `● ${opts.recordingLabel} 0:00`;
 
+    // Draggable: the status pill is the drag handle for the whole controls bar
+    // (the red frame stays put). Pointer-capture routes move/up back here.
+    const bar = controls; // non-null after the guard above
+    const pill = statusPill;
+    if (styled) applyStyle(pill, { cursor: 'grab', userSelect: 'none' });
+    pill.setAttribute('title', 'Drag to move');
+    let dragDX = 0;
+    let dragDY = 0;
+    let dragging = false;
+    const onGripDown = (ev: Event): void => {
+      const e = ev as PointerEvent;
+      try {
+        const r = bar.getBoundingClientRect();
+        dragDX = e.clientX - r.left;
+        dragDY = e.clientY - r.top;
+        // Switch from centered to explicit positioning at the current spot.
+        applyStyle(bar, {
+          left: `${r.left}px`,
+          top: `${r.top}px`,
+          right: 'auto',
+          bottom: 'auto',
+          transform: 'none',
+        });
+        dragging = true;
+        if (styled) applyStyle(pill, { cursor: 'grabbing' });
+        pill.setPointerCapture?.(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    };
+    const onGripMove = (ev: Event): void => {
+      if (!dragging) return;
+      const e = ev as PointerEvent;
+      try {
+        const g = globalThis as { innerWidth?: number; innerHeight?: number };
+        const vw = g.innerWidth ?? 0;
+        const vh = g.innerHeight ?? 0;
+        const x = Math.max(0, Math.min(vw - bar.offsetWidth, e.clientX - dragDX));
+        const y = Math.max(0, Math.min(vh - bar.offsetHeight, e.clientY - dragDY));
+        applyStyle(bar, { left: `${x}px`, top: `${y}px` });
+      } catch {
+        /* ignore */
+      }
+    };
+    const onGripUp = (ev: Event): void => {
+      dragging = false;
+      const e = ev as PointerEvent;
+      try {
+        if (styled) applyStyle(pill, { cursor: 'grab' });
+        pill.releasePointerCapture?.(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    };
+    pill.addEventListener('pointerdown', onGripDown);
+    pill.addEventListener('pointermove', onGripMove);
+    pill.addEventListener('pointerup', onGripUp);
+
     const row = doc.createElement('div');
     if (styled) applyStyle(row, { display: 'flex', alignItems: 'center', gap: '8px' });
 
@@ -786,6 +1009,9 @@ function build(
       clipsList.setAttribute('data-rt-mask', '');
       controls.appendChild(clipsList);
     }
+    // Echo the consent notice + policy link just above the submit row.
+    const controlsConsent = buildConsentEl(true);
+    if (controlsConsent) controls.appendChild(controlsConsent);
     if (pauseButton) row.appendChild(pauseButton);
     row.appendChild(submitClipsButton);
     row.appendChild(discardButton);
@@ -820,6 +1046,7 @@ function build(
     destroyed = true;
     open = false;
     stopTick();
+    clearAutoClose();
     // End any live recording span on teardown. This NEVER submits / uploads —
     // unsubmitted clips are dropped, which is the correct privacy default.
     try {

@@ -95,6 +95,7 @@ export type {
 export type {
   ReportWidgetOptions,
   ReportWidgetPosition,
+  ReportWidgetLauncher,
 } from './types.js';
 // Masked replay (rrweb) adapter surface (Wave-24, browser-only). Exposed so
 // hosts / tests can reference the policy + chunk types; the recorder is driven
