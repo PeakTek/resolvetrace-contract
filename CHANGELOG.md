@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- TypeScript SDK: **buffered "review" replay mode** (`autoCapture.replay.mode:
+  'review'`). Like `'manual'`, recording is bounded by `client.replay.start()` /
+  `stop()` spans, but captured chunks are **buffered locally and uploaded only on
+  `client.replay.submit()`** — nothing leaves the device until then. New curation
+  handle on `client.replay`: `listClips()`, `removeClip(id)`, `submit()`, and
+  `discard()`. Removing a clip leaves a sequence gap the server tolerates; a
+  session change or teardown discards unsubmitted clips.
+- TypeScript SDK: opt-in **record mode for the "Report a problem" widget**
+  (`reportWidget.record: true | { clips: 'single' | 'multi' }`). Adds a Record
+  button, a full-screen recording frame, and pause/resume + per-clip curate +
+  submit/discard controls — all excluded from capture via `data-rt-mask`. The
+  widget drives a neutral `recorder` surface; mount-time `onRecordStart` /
+  `onBeforeSubmit` hooks let the host arrange consent (fail-closed: a rejection
+  aborts recording / submit).
+
 ### Fixed
 - TypeScript SDK: masked replay now **continues chunk sequence numbers across
   capture spans within a session**. Previously each `replay.start()` built a

@@ -50,8 +50,9 @@ export interface ReplayMaskingConfig {
 /** Fully-resolved, validated replay policy (browser-only). */
 export interface ResolvedReplayConfig {
   /**
-   * Trigger model: `'auto'` (default, session-driven) / `'off'`
-   * (never) / `'manual'` (only between `replay.start()` / `replay.stop()`).
+   * Trigger model: `'auto'` (default, session-driven) / `'off'` (never) /
+   * `'manual'` (only between `replay.start()` / `replay.stop()`) / `'review'`
+   * (like `'manual'`, but buffered locally and uploaded only on `submit()`).
    * Independent of `enabled`, which remains the master gate.
    */
   readonly mode: ReplayMode;
@@ -182,10 +183,15 @@ export function resolveReplayConfig(
   // mode --------------------------------------------------------------------
   let mode = defaults.mode;
   if (opts.mode !== undefined) {
-    if (opts.mode !== 'auto' && opts.mode !== 'manual' && opts.mode !== 'off') {
+    if (
+      opts.mode !== 'auto' &&
+      opts.mode !== 'manual' &&
+      opts.mode !== 'off' &&
+      opts.mode !== 'review'
+    ) {
       throw new ConfigError(
         'config.invalid',
-        "`autoCapture.replay.mode` must be one of: 'auto', 'manual', 'off'.",
+        "`autoCapture.replay.mode` must be one of: 'auto', 'manual', 'off', 'review'.",
       );
     }
     mode = opts.mode;

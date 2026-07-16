@@ -117,6 +117,13 @@ export const REPLAY_MAX_CHUNK_BYTES = 3 * 1024 * 1024; // 3 MiB schema cap
 export const REPLAY_CHUNK_SOFT_BYTES = 2 * 1024 * 1024; // 2 MiB
 /** Time-based cut: flush a partial chunk after this long even if under size. */
 export const REPLAY_CHUNK_MAX_AGE_MS = 5_000;
+/**
+ * Memory ceiling for buffered (`'review'` mode) replay held before `submit()`.
+ * Once the buffer would exceed this, further chunks are dropped and the open
+ * clip is marked `truncated` — we never auto-stop rrweb from inside its emit
+ * path (reentrancy). The host UI should cap recording duration.
+ */
+export const REPLAY_MAX_BUFFERED_BYTES = 16 * 1024 * 1024; // 16 MiB
 /** Retry policy for the 3-leg upload flow (independent of the events transport). */
 export const REPLAY_RETRY_MAX_ATTEMPTS = 4;
 export const REPLAY_RETRY_BASE_MS = 500;
@@ -176,6 +183,21 @@ export const ALLOWED_REPORT_WIDGET_KEYS: ReadonlySet<string> = new Set([
   'successText',
   'errorText',
   'className',
+  // Record mode (opt-in).
+  'record',
+  'recordButtonText',
+  'pauseText',
+  'resumeText',
+  'submitClipsText',
+  'discardText',
+  'recordingLabel',
+  'pausedLabel',
+]);
+
+/** Clip-curation granularities accepted by `reportWidget.record.clips`. */
+export const REPORT_WIDGET_CLIP_MODES: ReadonlySet<string> = new Set([
+  'single',
+  'multi',
 ]);
 
 /** Floating-button corners the report widget supports. */

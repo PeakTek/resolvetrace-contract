@@ -11,6 +11,7 @@ import {
   ALLOWED_OPTION_KEYS,
   ALLOWED_REPORT_WIDGET_KEYS,
   REPORT_WIDGET_POSITIONS,
+  REPORT_WIDGET_CLIP_MODES,
   DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION,
   DEFAULT_ERROR_STATUS_THRESHOLD,
   DEFAULT_DEAD_CLICK_WINDOW_MS,
@@ -320,6 +321,13 @@ function resolveReportWidget(raw: unknown): ReportWidgetOptions | null {
     'successText',
     'errorText',
     'className',
+    'recordButtonText',
+    'pauseText',
+    'resumeText',
+    'submitClipsText',
+    'discardText',
+    'recordingLabel',
+    'pausedLabel',
   ] as const;
   for (const key of stringKeys) {
     const v = opts[key];
@@ -327,6 +335,45 @@ function resolveReportWidget(raw: unknown): ReportWidgetOptions | null {
       throw new ConfigError(
         'config.invalid',
         `\`reportWidget.${key}\` must be a non-empty string if provided.`,
+      );
+    }
+  }
+
+  // record — boolean, or an object whose only key is `clips ∈ {single,multi}`.
+  // Functions (onRecordStart / onBeforeSubmit) are never valid config keys; they
+  // are mount-only, so config stays serializable.
+  let record: ReportWidgetOptions['record'] | undefined;
+  if (opts.record !== undefined) {
+    if (typeof opts.record === 'boolean') {
+      record = opts.record;
+    } else if (opts.record !== null && typeof opts.record === 'object') {
+      const r = opts.record as Record<string, unknown>;
+      for (const k of Object.keys(r)) {
+        if (k !== 'clips') {
+          throw new ConfigError(
+            'config.invalid',
+            `Unknown reportWidget.record option: "${k}". Allowed: clips.`,
+          );
+        }
+      }
+      if (
+        r.clips !== undefined &&
+        (typeof r.clips !== 'string' || !REPORT_WIDGET_CLIP_MODES.has(r.clips))
+      ) {
+        throw new ConfigError(
+          'config.invalid',
+          `\`reportWidget.record.clips\` must be one of: ${Array.from(
+            REPORT_WIDGET_CLIP_MODES,
+          )
+            .sort()
+            .join(', ')}.`,
+        );
+      }
+      record = { clips: r.clips as 'single' | 'multi' | undefined };
+    } else {
+      throw new ConfigError(
+        'config.invalid',
+        '`reportWidget.record` must be a boolean or a `{ clips }` object.',
       );
     }
   }
@@ -341,6 +388,7 @@ function resolveReportWidget(raw: unknown): ReportWidgetOptions | null {
       (out as Record<string, unknown>)[key] = opts[key];
     }
   }
+  if (record !== undefined) out.record = record;
   return out;
 }
 

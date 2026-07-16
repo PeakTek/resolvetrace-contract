@@ -207,6 +207,7 @@ describe('replay policy resolution', () => {
     expect(resolveReplayConfig(true, ALLOWED_REPLAY_KEYS).mode).toBe('auto');
     expect(resolveReplayConfig({ mode: 'manual' }, ALLOWED_REPLAY_KEYS).mode).toBe('manual');
     expect(resolveReplayConfig({ mode: 'off' }, ALLOWED_REPLAY_KEYS).mode).toBe('off');
+    expect(resolveReplayConfig({ mode: 'review' }, ALLOWED_REPLAY_KEYS).mode).toBe('review');
     expect(ALLOWED_REPLAY_KEYS.has('mode')).toBe(true);
   });
 
@@ -632,6 +633,187 @@ describe('replay recorder', () => {
       sampler: () => 0,
     });
     expect(await r.start('S')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Recorder — review mode (buffer locally, curate, submit)
+// ---------------------------------------------------------------------------
+
+describe('replay recorder — review mode (buffer / curate / submit)', () => {
+  let restore: () => void;
+  afterEach(() => {
+    restore?.();
+    vi.restoreAllMocks();
+  });
+
+  function reviewRecorder(
+    fetchImpl: typeof fetch,
+    fake = makeFakeRrweb(),
+  ): { r: ReplayRecorder; fake: ReturnType<typeof makeFakeRrweb> } {
+    const r = new ReplayRecorder({
+      config: resolveReplayConfig(
+        { enabled: true, sampleRate: 1, mode: 'review' },
+        ALLOWED_REPLAY_KEYS,
+      ),
+      endpointUrl: ENDPOINT,
+      apiKey: API_KEY,
+      fetchImpl,
+      rrwebRecord: fake.record,
+      sampler: () => 0,
+      sleep: async () => {}, // skip real backoff on failure paths
+    });
+    return { r, fake };
+  }
+
+  /** Record one complete span (start→emit→stop) → one buffered clip. */
+  async function recordClip(
+    r: ReplayRecorder,
+    fake: ReturnType<typeof makeFakeRrweb>,
+    sid = 'SESS',
+  ): Promise<void> {
+    expect(await r.start(sid, 'manual')).toBe(true);
+    fake.emit({ type: 2, data: { node: { tagName: 'main' } } });
+    r.stop();
+  }
+
+  it('buffers locally — nothing uploads until submit()', async () => {
+    restore = installBrowser('/ok');
+    const { fetchImpl, calls } = makeReplayFetch();
+    const { r, fake } = reviewRecorder(fetchImpl);
+
+    expect(await r.start('SESS', 'manual')).toBe(true);
+    fake.emit({ type: 4, data: { href: 'https://x' } });
+    fake.emit({ type: 2, data: { node: { tagName: 'form' } } });
+    r.stop();
+
+    // No upload of any kind before submit.
+    expect(calls.filter((c) => c.url.includes('/v1/replay/'))).toHaveLength(0);
+    const clips = r.listClips();
+    expect(clips).toHaveLength(1);
+    expect(clips[0]!.eventCount).toBeGreaterThan(0);
+    expect(clips[0]!.bytes).toBeGreaterThan(0);
+
+    const res = await r.submit();
+    expect(res.uploaded).toBeGreaterThanOrEqual(1);
+    expect(res.failed).toBe(0);
+    expect(calls.some((c) => c.url.includes('/v1/replay/complete'))).toBe(true);
+    // Buffer is drained after submit.
+    expect(r.listClips()).toHaveLength(0);
+  });
+
+  it('removeClip drops a span; submit uploads survivors with a sequence gap', async () => {
+    restore = installBrowser('/ok');
+    const { fetchImpl, calls } = makeReplayFetch();
+    const { r, fake } = reviewRecorder(fetchImpl);
+
+    await recordClip(r, fake); // clip → seq 0
+    await recordClip(r, fake); // clip → seq 1
+    await recordClip(r, fake); // clip → seq 2
+
+    const clips = r.listClips();
+    expect(clips).toHaveLength(3);
+    expect(r.removeClip(clips[1]!.clipId)).toBe(true); // drop the MIDDLE clip
+    expect(r.listClips()).toHaveLength(2);
+
+    const res = await r.submit();
+    expect(res.uploaded).toBe(2);
+    expect(res.failed).toBe(0);
+    const seqs = calls
+      .filter((c) => c.url.includes('/v1/replay/complete'))
+      .map((c) => (c.body as { sequence: number }).sequence);
+    // The removed clip's sequence (1) is absent — a clean gap the server tolerates.
+    expect(seqs).toEqual([0, 2]);
+  });
+
+  it('discard() uploads nothing and clears the buffer', async () => {
+    restore = installBrowser('/ok');
+    const { fetchImpl, calls } = makeReplayFetch();
+    const { r, fake } = reviewRecorder(fetchImpl);
+
+    await recordClip(r, fake);
+    expect(r.listClips()).toHaveLength(1);
+    r.discard();
+    expect(r.listClips()).toHaveLength(0);
+    expect(calls.filter((c) => c.url.includes('/v1/replay/'))).toHaveLength(0);
+    expect(await r.submit()).toEqual({ uploaded: 0, failed: 0 });
+  });
+
+  it('submit() finalizes an in-progress span', async () => {
+    restore = installBrowser('/ok');
+    const { fetchImpl, calls } = makeReplayFetch();
+    const { r, fake } = reviewRecorder(fetchImpl);
+
+    expect(await r.start('SESS', 'manual')).toBe(true);
+    fake.emit({ type: 2, data: { node: { tagName: 'main' } } });
+    // No stop() — submit must finalize the open span first.
+    const res = await r.submit();
+    expect(res.uploaded).toBeGreaterThanOrEqual(1);
+    expect(r.isRecording).toBe(false);
+    expect(calls.some((c) => c.url.includes('/v1/replay/complete'))).toBe(true);
+  });
+
+  it('submit() never throws when uploads fail (resolves with a failed count)', async () => {
+    restore = installBrowser('/ok');
+    // Every signed-url leg fails; sleep is a noop so retries are instant.
+    const { fetchImpl } = makeReplayFetch({ failSignedUrlTimes: 100 });
+    const { r, fake } = reviewRecorder(fetchImpl);
+    await recordClip(r, fake);
+    const res = await r.submit();
+    expect(res.uploaded).toBe(0);
+    expect(res.failed).toBeGreaterThanOrEqual(1);
+  });
+
+  it('a session change discards unsubmitted clips (no upload)', async () => {
+    restore = installBrowser('/ok');
+    const { fetchImpl, calls } = makeReplayFetch();
+    const { r, fake } = reviewRecorder(fetchImpl);
+
+    await recordClip(r, fake, 'SESS-A');
+    expect(r.listClips()).toHaveLength(1);
+    // The client drives a session change via start(newSid) (auto trigger). In
+    // review mode that no-ops recording but abandons the old session's buffer.
+    expect(await r.start('SESS-B', 'auto')).toBe(false);
+    expect(r.listClips()).toHaveLength(0);
+    expect(calls.filter((c) => c.url.includes('/v1/replay/'))).toHaveLength(0);
+  });
+
+  it('does not reuse sequence numbers across submits in one session', async () => {
+    restore = installBrowser('/ok');
+    const { fetchImpl, calls } = makeReplayFetch();
+    const { r, fake } = reviewRecorder(fetchImpl);
+
+    await recordClip(r, fake, 'SESS'); // seq 0
+    expect((await r.submit()).uploaded).toBeGreaterThanOrEqual(1);
+
+    await recordClip(r, fake, 'SESS'); // must continue at seq 1, not reuse 0
+    expect((await r.submit()).uploaded).toBeGreaterThanOrEqual(1);
+
+    const seqs = calls
+      .filter((c) => c.url.includes('/v1/replay/complete'))
+      .map((c) => (c.body as { sequence: number }).sequence);
+    expect(seqs).toEqual([0, 1]);
+  });
+
+  it('curation verbs are no-ops outside review mode', async () => {
+    restore = installBrowser('/ok');
+    const { fetchImpl } = makeReplayFetch();
+    const fake = makeFakeRrweb();
+    const r = new ReplayRecorder({
+      config: resolveReplayConfig(
+        { enabled: true, sampleRate: 1, mode: 'auto' },
+        ALLOWED_REPLAY_KEYS,
+      ),
+      endpointUrl: ENDPOINT,
+      apiKey: API_KEY,
+      fetchImpl,
+      rrwebRecord: fake.record,
+      sampler: () => 0,
+    });
+    expect(r.listClips()).toEqual([]);
+    expect(r.removeClip(0)).toBe(false);
+    expect(await r.submit()).toEqual({ uploaded: 0, failed: 0 });
+    expect(() => r.discard()).not.toThrow();
   });
 });
 

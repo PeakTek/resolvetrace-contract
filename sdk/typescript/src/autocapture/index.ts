@@ -20,7 +20,12 @@ import type { ResolvedConfig } from '../config.js';
 import { isBrowser } from '../runtime.js';
 import type { DiagnosticsLevel, EventInput } from '../types.js';
 import { ReplayRecorder } from './replay/index.js';
-import type { ReplayPolicyProvider, RrwebRecordFn } from './replay/index.js';
+import type {
+  BufferedClipSummary,
+  ReplayPolicyProvider,
+  ReplaySubmitResult,
+  RrwebRecordFn,
+} from './replay/index.js';
 import { createApiSource } from './api.js';
 import { createDeadClickSource } from './dead-click.js';
 import { createErrorJsSource } from './error-js.js';
@@ -228,6 +233,49 @@ export class AutoCapture {
     if (!this.replay) return;
     try {
       this.replay.stopManual();
+    } catch (err) {
+      this.report(err);
+    }
+  }
+
+  /** Public: buffered clips awaiting submit (`client.replay.listClips()`). */
+  replayListClips(): BufferedClipSummary[] {
+    if (!this.replay) return [];
+    try {
+      return this.replay.listClips();
+    } catch (err) {
+      this.report(err);
+      return [];
+    }
+  }
+
+  /** Public: drop a buffered clip by id (`client.replay.removeClip()`). */
+  replayRemoveClip(clipId: number): boolean {
+    if (!this.replay) return false;
+    try {
+      return this.replay.removeClip(clipId);
+    } catch (err) {
+      this.report(err);
+      return false;
+    }
+  }
+
+  /** Public: upload buffered clips (`client.replay.submit()`). Never throws. */
+  async replaySubmit(): Promise<ReplaySubmitResult> {
+    if (!this.replay) return { uploaded: 0, failed: 0 };
+    try {
+      return await this.replay.submit();
+    } catch (err) {
+      this.report(err);
+      return { uploaded: 0, failed: 0 };
+    }
+  }
+
+  /** Public: discard buffered clips without uploading (`client.replay.discard()`). */
+  replayDiscard(): void {
+    if (!this.replay) return;
+    try {
+      this.replay.discard();
     } catch (err) {
       this.report(err);
     }
