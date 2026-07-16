@@ -424,6 +424,10 @@ describe('mountReportWidget — record mode', () => {
     expect(root.byRole('record-pause')).not.toBeNull();
     expect(root.byRole('record-submit')).not.toBeNull();
     expect(root.byRole('record-discard')).not.toBeNull();
+    // Overlay + controls are hidden until recording starts (via inline display,
+    // since an inline display would otherwise defeat the `hidden` attribute).
+    expect(overlay.style.display).toBe('none');
+    expect(controls.style.display).toBe('none');
     handle.destroy();
   });
 
@@ -496,6 +500,9 @@ describe('mountReportWidget — record mode', () => {
     click(root.byRole('record'));
     await settle();
     expect(rec.start).toHaveBeenCalledTimes(1);
+    // Recording started → the frame + controls are now visible.
+    expect(root.byRole('record-overlay')!.style.display).toBe('block');
+    expect(root.byRole('record-controls')!.style.display).toBe('flex');
 
     setClips([{ id: 7, durationMs: 3000 }]);
     click(root.byRole('record-pause')); // pause → stop + render clips
