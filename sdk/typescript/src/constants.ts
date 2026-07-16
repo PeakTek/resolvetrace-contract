@@ -192,12 +192,25 @@ export const ALLOWED_REPORT_WIDGET_KEYS: ReadonlySet<string> = new Set([
   'discardText',
   'recordingLabel',
   'pausedLabel',
+  // Launcher, in-flight feedback, and consent notice.
+  'launcher',
+  'sendingText',
+  'consentNotice',
+  'policyUrl',
+  'policyLinkText',
 ]);
 
 /** Clip-curation granularities accepted by `reportWidget.record.clips`. */
 export const REPORT_WIDGET_CLIP_MODES: ReadonlySet<string> = new Set([
   'single',
   'multi',
+]);
+
+/** Floating-launcher render modes accepted by `reportWidget.launcher`. */
+export const REPORT_WIDGET_LAUNCHERS: ReadonlySet<string> = new Set([
+  'button',
+  'icon',
+  'none',
 ]);
 
 /** Floating-button corners the report widget supports. */

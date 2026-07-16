@@ -12,6 +12,7 @@ import {
   ALLOWED_REPORT_WIDGET_KEYS,
   REPORT_WIDGET_POSITIONS,
   REPORT_WIDGET_CLIP_MODES,
+  REPORT_WIDGET_LAUNCHERS,
   DEFAULT_AUTO_CAPTURE_MAX_EVENTS_PER_SESSION,
   DEFAULT_ERROR_STATUS_THRESHOLD,
   DEFAULT_DEAD_CLICK_WINDOW_MS,
@@ -328,6 +329,9 @@ function resolveReportWidget(raw: unknown): ReportWidgetOptions | null {
     'discardText',
     'recordingLabel',
     'pausedLabel',
+    'sendingText',
+    'consentNotice',
+    'policyLinkText',
   ] as const;
   for (const key of stringKeys) {
     const v = opts[key];
@@ -378,6 +382,35 @@ function resolveReportWidget(raw: unknown): ReportWidgetOptions | null {
     }
   }
 
+  // launcher — enum.
+  if (
+    opts.launcher !== undefined &&
+    (typeof opts.launcher !== 'string' || !REPORT_WIDGET_LAUNCHERS.has(opts.launcher))
+  ) {
+    throw new ConfigError(
+      'config.invalid',
+      `\`reportWidget.launcher\` must be one of: ${Array.from(REPORT_WIDGET_LAUNCHERS)
+        .sort()
+        .join(', ')}.`,
+    );
+  }
+
+  // policyUrl — must be a non-empty http(s) URL or a `/`-relative path. Reject
+  // `javascript:` / `data:` and other schemes so the rendered link stays safe.
+  if (opts.policyUrl !== undefined) {
+    const u = opts.policyUrl;
+    const safe =
+      typeof u === 'string' &&
+      u.length > 0 &&
+      (u.startsWith('https://') || u.startsWith('http://') || u.startsWith('/'));
+    if (!safe) {
+      throw new ConfigError(
+        'config.invalid',
+        '`reportWidget.policyUrl` must be an http(s):// URL or a `/`-relative path.',
+      );
+    }
+  }
+
   // Re-assemble a clean, typed options object (always enabled here).
   const out: ReportWidgetOptions = { enabled: true };
   if (opts.position !== undefined) {
@@ -389,6 +422,10 @@ function resolveReportWidget(raw: unknown): ReportWidgetOptions | null {
     }
   }
   if (record !== undefined) out.record = record;
+  if (opts.launcher !== undefined) {
+    out.launcher = opts.launcher as ReportWidgetOptions['launcher'];
+  }
+  if (opts.policyUrl !== undefined) out.policyUrl = opts.policyUrl as string;
   return out;
 }
 
