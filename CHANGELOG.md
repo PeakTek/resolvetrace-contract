@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-07-16
+
+TypeScript SDK feature release: **user-driven session recording** — a buffered
+"review" replay mode where nothing uploads until the user submits, surfaced
+through the "Report a problem" widget's opt-in record mode. Pre-1.0 — the public
+API is not yet stable.
+
 ### Added
 - TypeScript SDK: **buffered "review" replay mode** (`autoCapture.replay.mode:
   'review'`). Like `'manual'`, recording is bounded by `client.replay.start()` /
