@@ -541,12 +541,12 @@ function build(
   }
 
   function showRecordingUi(): void {
-    if (overlay) overlay.hidden = false;
-    if (controls) controls.hidden = false;
+    if (overlay) overlay.style.display = 'block';
+    if (controls) controls.style.display = 'flex';
   }
   function hideRecordingUi(): void {
-    if (overlay) overlay.hidden = true;
-    if (controls) controls.hidden = true;
+    if (overlay) overlay.style.display = 'none';
+    if (controls) controls.style.display = 'none';
   }
 
   function startTick(): void {
@@ -700,7 +700,10 @@ function build(
     overlay.setAttribute('data-rt-report', 'record-overlay');
     overlay.setAttribute('data-rt-mask', '');
     overlay.setAttribute('aria-hidden', 'true');
-    overlay.hidden = true;
+    // Visibility is toggled via inline `display` (not the `hidden` attribute):
+    // the controls carry an inline `display`, which would override the UA
+    // `[hidden] { display: none }`, so both use `display` for consistency.
+    overlay.style.display = 'none';
     if (styled) {
       applyStyle(overlay, {
         position: 'fixed',
@@ -720,14 +723,13 @@ function build(
     controls.setAttribute('role', 'region');
     controls.setAttribute('aria-label', opts.recordingLabel);
     controls.setAttribute('tabindex', '-1');
-    controls.hidden = true;
+    controls.style.display = 'none';
     if (styled) {
       applyStyle(controls, {
         position: 'fixed',
         bottom: '16px',
         left: '50%',
         transform: 'translateX(-50%)',
-        display: 'flex',
         flexDirection: 'column',
         gap: '6px',
         maxWidth: '90vw',
