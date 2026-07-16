@@ -85,6 +85,8 @@ export type {
   ReportWidgetClient,
   ReportWidgetHandle,
   MountReportWidgetOptions,
+  ReportWidgetClip,
+  ReportWidgetRecorder,
 } from './report-widget.js';
 export type {
   ReportProblemInput,
@@ -115,4 +117,6 @@ export type {
   ReplaySignedUrlBody,
   ReplayScrubberReport,
   ReplayPolicyProvider,
+  BufferedClipSummary,
+  ReplaySubmitResult,
 } from './autocapture/replay/index.js';

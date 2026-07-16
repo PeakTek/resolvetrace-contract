@@ -8,8 +8,10 @@
 
 export { ReplayRecorder, defaultReplayConfig } from './recorder.js';
 export type {
+  BufferedClipSummary,
   RecorderDeps,
   ReplayPolicyProvider,
+  ReplaySubmitResult,
   RrwebRecordFn,
 } from './recorder.js';
 export {

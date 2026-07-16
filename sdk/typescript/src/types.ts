@@ -350,10 +350,14 @@ export interface AutoCaptureOptions {
  *   - `'off'`    — never record.
  *   - `'manual'` — record ONLY between `client.replay.start()` and
  *     `client.replay.stop()`. `start()`/`stop()` are documented no-ops in the
- *     other two modes, so host-app code that calls them stays portable.
+ *     other modes, so host-app code that calls them stays portable.
+ *   - `'review'` — like `'manual'`, but BUFFER captured spans locally and upload
+ *     nothing until `client.replay.submit()`. Each start/stop span is a "clip";
+ *     `client.replay.listClips()` / `removeClip()` let a user curate clips and
+ *     `discard()` drops the buffer. Nothing leaves the device without `submit()`.
  *
  * **Availability.** The SDK ships the same on every deployment and includes all
- * three modes, but **consent-gated `'manual'` replay is a ResolveTrace Platform
+ * modes, but **consent-gated `'manual'` replay is a ResolveTrace Platform
  * (managed) capability**: host-driven `start()`/`stop()` (multiple spans per
  * session) where your app obtains user consent and the managed server admits
  * captured replay only for consented sessions (`403` otherwise). Self-hosted OSS
@@ -362,17 +366,18 @@ export interface AutoCaptureOptions {
  * the mode that matches the backend you target is the app developer's
  * responsibility; the SDK neither self-detects the tier nor queries the server.
  */
-export type ReplayMode = 'auto' | 'manual' | 'off';
+export type ReplayMode = 'auto' | 'manual' | 'off' | 'review';
 
 export interface ReplayOptions {
   /**
-   * Replay trigger model — `'auto'` (default) / `'off'` / `'manual'`. See
-   * {@link ReplayMode}. Independent of `enabled`: `enabled` is the master gate
+   * Replay trigger model — `'auto'` (default) / `'off'` / `'manual'` / `'review'`.
+   * See {@link ReplayMode}. Independent of `enabled`: `enabled` is the master gate
    * (with sampling / level / deny), `mode` chooses WHEN recording is triggered.
    *
-   * The SDK ships all three everywhere, but consent-gated `'manual'` is a
-   * **ResolveTrace Platform** capability; on self-hosted OSS use `'auto'`/`'off'`.
-   * The developer picks the mode matching their backend — see {@link ReplayMode}.
+   * `'manual'` / `'review'` are user-driven (start/stop spans); `'review'` also
+   * buffers locally and uploads only on `client.replay.submit()`. Consent-gated
+   * `'manual'` is a **ResolveTrace Platform** capability; on self-hosted OSS use
+   * `'auto'`/`'off'`. Pick the mode matching your backend — see {@link ReplayMode}.
    */
   mode?: ReplayMode;
   /** Master switch. Default `false`. */
@@ -409,6 +414,19 @@ export type ReportWidgetPosition =
   | 'top-right'
   | 'top-left';
 
+/** Clip-curation granularity for the widget's record mode. */
+export type ReportWidgetClipMode = 'single' | 'multi';
+
+/** Record-mode options for the report widget. */
+export interface ReportWidgetRecordOptions {
+  /**
+   * `'single'` (default) — the whole session records as one clip (all-or-
+   * nothing: submit or discard). `'multi'` — pause/resume accrues multiple
+   * clips the user can individually remove before submitting.
+   */
+  clips?: ReportWidgetClipMode;
+}
+
 /**
  * Options for the optional one-click "Report a problem" widget (Wave-25).
  *
@@ -437,6 +455,28 @@ export interface ReportWidgetOptions {
   errorText?: string;
   /** Override the root container class (suppresses the inline base styles). */
   className?: string;
+  /**
+   * Opt-in RECORD mode: turns the widget into a session recorder (a Record
+   * button, a full-screen recording frame, and pause/curate/submit controls).
+   * Requires the mounting client to provide a `recorder`. `false`/omitted keeps
+   * the classic text reporter; `true` → record mode with `clips: 'single'`.
+   * Nothing uploads until the user submits.
+   */
+  record?: boolean | ReportWidgetRecordOptions;
+  /** Record button label. Default `'Record'`. */
+  recordButtonText?: string;
+  /** Pause button label (multi-clip). Default `'Pause'`. */
+  pauseText?: string;
+  /** Resume button label (multi-clip). Default `'Resume'`. */
+  resumeText?: string;
+  /** Submit-clips button label. Default `'Submit'`. */
+  submitClipsText?: string;
+  /** Discard button label. Default `'Discard'`. */
+  discardText?: string;
+  /** Status label shown while recording. Default `'Recording'`. */
+  recordingLabel?: string;
+  /** Status label shown while paused. Default `'Paused'`. */
+  pausedLabel?: string;
 }
 
 /** Options accepted by the `ResolveTraceClient` constructor. */

@@ -7,6 +7,10 @@
  */
 
 import { AutoCapture } from './autocapture/index.js';
+import type {
+  BufferedClipSummary,
+  ReplaySubmitResult,
+} from './autocapture/replay/index.js';
 import { resolveConfig } from './config.js';
 import type { ResolvedConfig } from './config.js';
 import { buildEnvelope } from './envelope.js';
@@ -19,7 +23,7 @@ import {
 import { buildReportEvent } from './report.js';
 import type { ReportProblemInput, ReportSource } from './report.js';
 import { mountReportWidget } from './report-widget.js';
-import type { ReportWidgetHandle } from './report-widget.js';
+import type { ReportWidgetClient, ReportWidgetHandle } from './report-widget.js';
 import { isBrowser } from './runtime.js';
 import { SessionManager } from './session.js';
 import { Transport } from './transport.js';
@@ -168,10 +172,19 @@ export class ResolveTraceClient {
    * `'manual'` is not supported there (no consent gate). Pick the mode that
    * matches your backend. `start()` resolves `true` only when a span actually
    * began. See {@link ReplayMode}.
+   *
+   * In `'review'` mode `start()`/`stop()` bound capture spans exactly as in
+   * `'manual'`, but chunks are BUFFERED locally: `listClips()` enumerates the
+   * captured spans ("clips"), `removeClip(id)` drops one, `submit()` uploads the
+   * survivors, and `discard()` drops them all. Nothing uploads until `submit()`.
    */
   public readonly replay: {
     start: () => Promise<boolean>;
     stop: () => void;
+    submit: () => Promise<ReplaySubmitResult>;
+    discard: () => void;
+    listClips: () => BufferedClipSummary[];
+    removeClip: (clipId: number) => boolean;
   };
 
   constructor(options: ClientOptions) {
@@ -241,6 +254,13 @@ export class ResolveTraceClient {
     this.replay = Object.defineProperties({} as ResolveTraceClient['replay'], {
       start: { enumerable: true, value: () => ac.replayStart() },
       stop: { enumerable: true, value: () => ac.replayStop() },
+      submit: { enumerable: true, value: () => ac.replaySubmit() },
+      discard: { enumerable: true, value: () => ac.replayDiscard() },
+      listClips: { enumerable: true, value: () => ac.replayListClips() },
+      removeClip: {
+        enumerable: true,
+        value: (clipId: number) => ac.replayRemoveClip(clipId),
+      },
     });
 
     // Install auto-capture last, once the client is fully wired. Browser-only;
@@ -262,13 +282,33 @@ export class ResolveTraceClient {
     // constructor. Hosts can also mount it directly with `mountReportWidget`.
     if (this.config.reportWidget !== null) {
       try {
-        this.reportWidgetHandle = mountReportWidget(
-          {
-            reportProblem: (input: ReportProblemInput) =>
-              this.reportProblemInternal(input, 'widget'),
-          },
-          this.config.reportWidget,
-        );
+        const rw = this.config.reportWidget;
+        const replay = this.replay;
+        const widgetClient: ReportWidgetClient = {
+          reportProblem: (input: ReportProblemInput) =>
+            this.reportProblemInternal(input, 'widget'),
+        };
+        // Record mode: wire the widget's neutral recorder onto client.replay.*.
+        // (A host mounting directly can inject onRecordStart/onBeforeSubmit for
+        // consent; the auto-mount path has no callbacks by design.)
+        if (rw.record) {
+          widgetClient.recorder = {
+            start: () => replay.start(),
+            stop: () => replay.stop(),
+            listClips: () =>
+              replay
+                .listClips()
+                .map((c) => ({ id: c.clipId, durationMs: c.durationMs })),
+            removeClip: (id: number) => {
+              replay.removeClip(id);
+            },
+            submit: async () => {
+              await replay.submit();
+            },
+            discard: () => replay.discard(),
+          };
+        }
+        this.reportWidgetHandle = mountReportWidget(widgetClient, rw);
       } catch (err) {
         if (this.config.onError) {
           try {

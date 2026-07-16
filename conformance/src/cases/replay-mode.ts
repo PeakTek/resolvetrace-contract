@@ -2,22 +2,23 @@
  * Replay trigger-mode contract (SDK-local, always runs).
  *
  * The replay trigger model is a neutral SDK mechanism: the SDK exposes a
- * `mode` of 'auto' | 'manual' | 'off' plus a public `client.replay.start()` /
- * `client.replay.stop()` handle. The app developer sets `mode` to match their
- * backend; consent-gated `'manual'` is a ResolveTrace Platform capability, while
- * self-hosted OSS is auto/off-only. The SDK carries no consent or entitlement
- * logic.
+ * `mode` of 'auto' | 'manual' | 'off' | 'review' plus a public
+ * `client.replay.start()` / `client.replay.stop()` handle (and, for buffered
+ * `'review'` capture, `submit()` / `discard()` / `listClips()` / `removeClip()`).
+ * The app developer sets `mode` to match their backend; consent-gated `'manual'`
+ * is a ResolveTrace Platform capability, while self-hosted OSS is auto/off-only.
+ * The SDK carries no consent or entitlement logic.
  *
- * This case pins the *public contract* so every SDK build ships the same three
- * modes and the same safe handle shape:
+ * This case pins the *public contract* so every SDK build ships the same modes
+ * and the same safe handle shape:
  *
  *   1. `mode` defaults to 'auto', and the shorthand `replay: true` also resolves
  *      to 'auto' — enabling replay never silently changes the trigger.
- *   2. All three documented modes resolve; any other value is rejected at config
+ *   2. Every documented mode resolves; any other value is rejected at config
  *      time (fail-fast, not silently coerced).
- *   3. `client.replay` is always present with callable `start`/`stop`, and both
- *      are a safe no-op off the browser (start → false, stop → no throw). A host
- *      can wire the manual handle unconditionally without runtime guards.
+ *   3. `client.replay` is always present with callable `start`/`stop` +
+ *      `submit`/`discard`/`listClips`/`removeClip`, all a safe no-op off the
+ *      browser. A host can wire the handle unconditionally without runtime guards.
  *
  * Like the replay-masking layer in `masking-parity`, this is SDK-local: it never
  * touches the network, so it runs even under `--skip-network`.
@@ -25,7 +26,7 @@
 
 import type { CaseDefinition, CaseResult } from '../types.ts';
 
-const MODES = ['auto', 'manual', 'off'] as const;
+const MODES = ['auto', 'manual', 'off', 'review'] as const;
 
 async function run(): Promise<CaseResult> {
   const started = performance.now();
@@ -92,6 +93,39 @@ async function run(): Promise<CaseResult> {
         client.replay.stop();
       } catch (err) {
         failures.push(`client.replay.stop() threw off-browser: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // The buffered-review curation handle ships identically and is a safe no-op
+    // off-browser / outside 'review' mode (nothing to list, remove, or upload).
+    const curate = client.replay as unknown as {
+      submit?: () => Promise<{ uploaded: number; failed: number }>;
+      discard?: () => void;
+      listClips?: () => unknown[];
+      removeClip?: (id: number) => boolean;
+    };
+    if (
+      typeof curate.submit !== 'function' ||
+      typeof curate.discard !== 'function' ||
+      typeof curate.listClips !== 'function' ||
+      typeof curate.removeClip !== 'function'
+    ) {
+      failures.push('client.replay.submit/discard/listClips/removeClip are not all callable');
+    } else {
+      if (curate.listClips().length !== 0) {
+        failures.push('client.replay.listClips() is non-empty off-browser (expected [])');
+      }
+      if (curate.removeClip(0) !== false) {
+        failures.push('client.replay.removeClip() returned true off-browser (expected false)');
+      }
+      const submitted = await curate.submit();
+      if (submitted.uploaded !== 0 || submitted.failed !== 0) {
+        failures.push('client.replay.submit() uploaded off-browser (expected {uploaded:0,failed:0})');
+      }
+      try {
+        curate.discard();
+      } catch (err) {
+        failures.push(`client.replay.discard() threw off-browser: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 

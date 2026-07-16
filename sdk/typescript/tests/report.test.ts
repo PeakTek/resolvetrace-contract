@@ -224,6 +224,9 @@ class FakeEl {
     child.parentNode = null;
     return child;
   }
+  get firstChild(): FakeEl | null {
+    return this.children[0] ?? null;
+  }
   addEventListener(type: string, cb: () => void): void {
     const arr = this.listeners.get(type) ?? [];
     arr.push(cb);
@@ -359,6 +362,229 @@ describe('mountReportWidget', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Widget — record mode (overlay + controls, curate, submit; never-throw)
+// ---------------------------------------------------------------------------
+
+interface FakeClip {
+  id: number;
+  durationMs: number;
+}
+function fakeRecorder(): {
+  rec: {
+    start: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+    listClips: ReturnType<typeof vi.fn>;
+    removeClip: ReturnType<typeof vi.fn>;
+    submit: ReturnType<typeof vi.fn>;
+    discard: ReturnType<typeof vi.fn>;
+  };
+  setClips: (c: FakeClip[]) => void;
+} {
+  let clips: FakeClip[] = [];
+  const rec = {
+    start: vi.fn(async () => true),
+    stop: vi.fn(() => {}),
+    listClips: vi.fn(() => clips),
+    removeClip: vi.fn((id: number) => {
+      clips = clips.filter((c) => c.id !== id);
+    }),
+    submit: vi.fn(async () => {}),
+    discard: vi.fn(() => {
+      clips = [];
+    }),
+  };
+  return { rec, setClips: (c) => (clips = c) };
+}
+
+describe('mountReportWidget — record mode', () => {
+  let dom: { restore: () => void; doc: FakeDocument };
+  beforeEach(() => {
+    dom = installDom();
+  });
+  afterEach(() => {
+    dom.restore();
+    vi.restoreAllMocks();
+  });
+
+  const click = (el: unknown): void => (el as unknown as FakeEl).click();
+
+  it('builds a Record button + a masked overlay and controls (multi: pause + clips)', () => {
+    const { rec } = fakeRecorder();
+    const handle = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' } },
+    );
+    const root = handle.root!;
+    expect(root.byRole('record')).not.toBeNull();
+    const overlay = root.byRole('record-overlay')!;
+    expect(overlay).not.toBeNull();
+    expect(overlay.getAttribute('data-rt-mask')).toBe(''); // excluded from capture
+    const controls = root.byRole('record-controls')!;
+    expect(controls.getAttribute('data-rt-mask')).toBe('');
+    expect(root.byRole('record-pause')).not.toBeNull();
+    expect(root.byRole('record-submit')).not.toBeNull();
+    expect(root.byRole('record-discard')).not.toBeNull();
+    handle.destroy();
+  });
+
+  it('single-clip mode omits the pause button and clip list', () => {
+    const { rec } = fakeRecorder();
+    const handle = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: true }, // defaults to single
+    );
+    const root = handle.root!;
+    expect(root.byRole('record')).not.toBeNull();
+    expect(root.byRole('record-pause')).toBeNull();
+    expect(root.byRole('record-clips')).toBeNull();
+    expect(root.byRole('record-submit')).not.toBeNull();
+    handle.destroy();
+  });
+
+  it('does NOT build record UI without a recorder (falls back to text reporter)', () => {
+    const handle = mountReportWidget({ reportProblem: vi.fn(() => 'X') }, { record: true });
+    const root = handle.root!;
+    expect(root.byRole('record')).toBeNull();
+    expect(root.byRole('record-overlay')).toBeNull();
+    handle.destroy();
+  });
+
+  it('Record awaits onRecordStart BEFORE recorder.start()', async () => {
+    const { rec } = fakeRecorder();
+    const order: string[] = [];
+    const onRecordStart = vi.fn(async () => {
+      order.push('consent');
+    });
+    rec.start.mockImplementation(async () => {
+      order.push('start');
+      return true;
+    });
+    const handle = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' }, onRecordStart },
+    );
+    click(handle.root!.byRole('record'));
+    await settle();
+    expect(onRecordStart).toHaveBeenCalledTimes(1);
+    expect(rec.start).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['consent', 'start']);
+    handle.destroy();
+  });
+
+  it('a rejected onRecordStart aborts — recorder.start() is never called', async () => {
+    const { rec } = fakeRecorder();
+    const onRecordStart = vi.fn(async () => {
+      throw new Error('consent denied');
+    });
+    const handle = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' }, onRecordStart },
+    );
+    expect(() => click(handle.root!.byRole('record'))).not.toThrow();
+    await settle();
+    expect(rec.start).not.toHaveBeenCalled();
+    handle.destroy();
+  });
+
+  it('multi mode: pause stops, a clip renders + removes, resume starts a new span', async () => {
+    const { rec, setClips } = fakeRecorder();
+    const handle = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' } },
+    );
+    const root = handle.root!;
+    click(root.byRole('record'));
+    await settle();
+    expect(rec.start).toHaveBeenCalledTimes(1);
+
+    setClips([{ id: 7, durationMs: 3000 }]);
+    click(root.byRole('record-pause')); // pause → stop + render clips
+    await settle();
+    expect(rec.stop).toHaveBeenCalled();
+    const removeBtn = root.byRole('record-clip-remove');
+    expect(removeBtn).not.toBeNull();
+    click(removeBtn);
+    expect(rec.removeClip).toHaveBeenCalledWith(7);
+
+    click(root.byRole('record-pause')); // resume → start (new clip)
+    await settle();
+    expect(rec.start).toHaveBeenCalledTimes(2);
+    handle.destroy();
+  });
+
+  it('Submit awaits onBeforeSubmit, then calls submit exactly once (never before)', async () => {
+    const { rec } = fakeRecorder();
+    const order: string[] = [];
+    const onBeforeSubmit = vi.fn(async () => {
+      order.push('beforeSubmit');
+    });
+    rec.submit.mockImplementation(async () => {
+      order.push('submit');
+    });
+    const handle = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' }, onBeforeSubmit },
+    );
+    const root = handle.root!;
+    click(root.byRole('record'));
+    await settle();
+    expect(rec.submit).not.toHaveBeenCalled();
+
+    click(root.byRole('record-submit'));
+    await settle();
+    expect(onBeforeSubmit).toHaveBeenCalledTimes(1);
+    expect(rec.submit).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['beforeSubmit', 'submit']);
+  });
+
+  it('Discard calls discard and never submit', async () => {
+    const { rec } = fakeRecorder();
+    const handle = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' } },
+    );
+    const root = handle.root!;
+    click(root.byRole('record'));
+    await settle();
+    click(root.byRole('record-discard'));
+    expect(rec.discard).toHaveBeenCalledTimes(1);
+    expect(rec.submit).not.toHaveBeenCalled();
+  });
+
+  it('never throws when the recorder throws on every method', async () => {
+    const rec = {
+      start: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+      stop: vi.fn(() => {
+        throw new Error('boom');
+      }),
+      listClips: vi.fn(() => {
+        throw new Error('boom');
+      }),
+      removeClip: vi.fn(() => {
+        throw new Error('boom');
+      }),
+      submit: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+      discard: vi.fn(() => {
+        throw new Error('boom');
+      }),
+    };
+    const handle = mountReportWidget(
+      { reportProblem: vi.fn(() => 'X'), recorder: rec },
+      { record: { clips: 'multi' } },
+    );
+    const root = handle.root!;
+    expect(() => click(root.byRole('record'))).not.toThrow();
+    await settle();
+    // start() threw → treated as not-started; never propagates.
+    expect(() => handle.destroy()).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Config validation for the reportWidget option + client auto-mount
 // ---------------------------------------------------------------------------
 
@@ -404,5 +630,49 @@ describe('reportWidget config', () => {
     const t = recordingTransport();
     createClient({ apiKey: 'rt_test', endpoint: ENDPOINT, transport: t.fetch });
     expect(dom.doc.body.children).toHaveLength(0);
+  });
+
+  it('accepts record options and rejects a bad clips value / unknown sub-key', () => {
+    const t = recordingTransport();
+    expect(() =>
+      createClient({
+        apiKey: 'rt_test',
+        endpoint: ENDPOINT,
+        transport: t.fetch,
+        reportWidget: { record: { clips: 'multi' } },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      createClient({
+        apiKey: 'rt_test',
+        endpoint: ENDPOINT,
+        transport: t.fetch,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        reportWidget: { record: { clips: 'lots' } as any },
+      }),
+    ).toThrow();
+    expect(() =>
+      createClient({
+        apiKey: 'rt_test',
+        endpoint: ENDPOINT,
+        transport: t.fetch,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        reportWidget: { record: { bogus: true } as any },
+      }),
+    ).toThrow();
+  });
+
+  it('auto-mounts record UI when reportWidget.record is set (recorder wired to client.replay)', () => {
+    const t = recordingTransport();
+    createClient({
+      apiKey: 'rt_test',
+      endpoint: ENDPOINT,
+      transport: t.fetch,
+      reportWidget: { record: { clips: 'multi' } },
+      autoCapture: { replay: { enabled: true, mode: 'review' } },
+    });
+    // The floating root mounted; the record button is present (recorder wired).
+    const root = dom.doc.body.children[0]!;
+    expect(root.byRole('record')).not.toBeNull();
   });
 });
