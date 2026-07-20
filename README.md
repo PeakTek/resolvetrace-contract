@@ -2,10 +2,6 @@
 
 Public contract repository for ResolveTrace.
 
-## Status
-
-Bootstrap repository. This repository defines the interface surface first; implementation repositories consume it.
-
 ## Purpose
 
 `resolvetrace-contract` is the single source of truth for the public client-to-server boundary:
@@ -17,13 +13,11 @@ Bootstrap repository. This repository defines the interface surface first; imple
 
 If a type, payload, or endpoint crosses the SDK/server boundary, it belongs here.
 
-## Scope
+## Layout
 
-Planned contents:
-
-- `sdk/`
-- `api-spec/`
-- `schemas/`
+- `sdk/` — the client SDKs (`sdk/js` is the maintained surface; `sdk/python` is frozen — see its README).
+- `api-spec/` — `openapi.yaml`, the HTTP API specification.
+- `schemas/` — TypeBox sources (`schemas/src/*.ts`) compiled to published JSON Schemas, plus the `schemas/fixtures/` corpus.
 - `conformance/` — black-box harness that verifies a deployment against the contract. See [`conformance/README.md`](./conformance/README.md) for the customer-facing guide.
 - `CHANGELOG.md`
 

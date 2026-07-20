@@ -16,7 +16,7 @@ Runs five jobs. All are required; none can be bypassed.
 | --- | --- | --- |
 | `typecheck` | `npm ci` + `npm run typecheck` | TypeScript error in a TypeBox schema or helper. Fix locally and push. |
 | `build-schemas` | `npm run build:schemas`, then `git diff --exit-code schemas/*.json` | You edited `schemas/*.json` by hand, or you forgot to run `npm run build:schemas` after editing `schemas/src/*.ts`. Run the build and commit the regenerated JSON. |
-| `validate-fixtures` | `npm run validate:fixtures` (ajv against the fixture corpus) | A fixture under `schemas/samples/` no longer matches its schema. Either the fixture is stale or the schema change was unintentional. |
+| `validate-fixtures` | `npm run validate:fixtures` (ajv against the fixture corpus) | A fixture under `schemas/fixtures/` no longer matches its schema. Either the fixture is stale or the schema change was unintentional. |
 | `validate-openapi` | `npm run validate:openapi` | `api-spec/openapi.yaml` is structurally invalid (bad `$ref`, missing required field, etc.). |
 | `oasdiff` | Compares `api-spec/openapi.yaml` on the PR branch against `main` | A breaking change (removed path, removed required field, type change, etc.) was introduced without coordinating a contract version bump. |
 
