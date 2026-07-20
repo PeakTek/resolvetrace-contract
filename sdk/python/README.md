@@ -4,6 +4,13 @@ Official Python SDK for [ResolveTrace](https://resolvetrace.com). Captures
 events and session telemetry from server-side Python applications and ships
 them to the ResolveTrace ingest API.
 
+> **Status: frozen.** Active contract development is JS/TS-only. This SDK
+> implements the contract as of its last release and is not tracking new
+> contract surface; its conformance parity leg runs only on demand
+> (`CONFORMANCE_RUN_PYTHON_PARITY=1`) rather than in CI. It remains supported
+> for the surface it already covers — expect no new features until the freeze
+> lifts. See [`conformance/README.md`](../../conformance/README.md).
+
 - **Simple**: two-argument constructor. Your integration code never changes
   when you migrate between self-hosted and managed deployments.
 - **Privacy-first**: deterministic PII redaction runs inside the SDK before
