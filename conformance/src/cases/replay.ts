@@ -163,3 +163,115 @@ export const replayCase: CaseDefinition = {
   description: 'Signed-URL issuance + upload + manifest completion succeeds',
   run,
 };
+
+/**
+ * Clip-capability enforcement: the server must enforce the replay clip
+ * capability it advertises on session-start.
+ *
+ *   - A server that advertises `replay.clips = "single"` (or omits it — the
+ *     baseline) MUST reject a `clipIndex > 0` upload request with
+ *     `403 multi_clip_not_permitted`. Recording is a single clip per session.
+ *   - A server that advertises `replay.clips = "multi"` MUST NOT reject a
+ *     `clipIndex > 0` as unpermitted (it granted the capability).
+ *
+ * Capability-aware so the case is correct against any conformant deployment,
+ * single- or multi-clip. `clipIndex` is optional in the request schema, so a
+ * server predating it would reject with a schema 400 (not the policy 403) — that
+ * surfaces as a clear failure naming the mismatch.
+ */
+async function runClipCapability(
+  config: ResolvedConformanceConfig,
+): Promise<CaseResult> {
+  const id = 'replay.clip-capability';
+  const description =
+    'The server enforces the replay clip capability it advertises (single rejects clipIndex > 0)';
+  const started = performance.now();
+  if (config.skipNetwork) {
+    return { id, description, status: 'skip', durationMs: 0, message: '--skip-network set' };
+  }
+
+  try {
+    const sessionId = generateUlid();
+
+    // 1) Learn the advertised capability from the session-start response.
+    const start = await postJson({
+      endpoint: config.endpoint,
+      path: '/v1/session/start',
+      apiKey: config.apiKey,
+      body: { sessionId, startedAt: new Date().toISOString() },
+    });
+    if (start.status < 200 || start.status >= 300) {
+      return {
+        id,
+        description,
+        status: 'fail',
+        durationMs: performance.now() - started,
+        message: `/v1/session/start returned ${start.status}`,
+        details: { body: start.bodyJson ?? start.bodyText.slice(0, 256) },
+      };
+    }
+    const advertised =
+      (start.bodyJson as { replay?: { clips?: string } })?.replay?.clips ?? 'single';
+
+    // 2) Attempt a second-clip upload request (clipIndex > 0).
+    const res = await postJson({
+      endpoint: config.endpoint,
+      path: '/v1/replay/signed-url',
+      apiKey: config.apiKey,
+      body: {
+        sessionId,
+        sequence: 1,
+        approxBytes: 32,
+        contentType: 'application/vnd.resolvetrace.replay+rrweb',
+        clipIndex: 1,
+      },
+    });
+    const durationMs = performance.now() - started;
+    const body = (res.bodyJson ?? {}) as { error?: string };
+    const rejectedAsUnpermitted =
+      res.status === 403 && body.error === 'multi_clip_not_permitted';
+
+    if (advertised === 'multi') {
+      if (rejectedAsUnpermitted) {
+        return {
+          id,
+          description,
+          status: 'fail',
+          durationMs,
+          message:
+            'server advertised replay.clips = multi but rejected clipIndex > 0 as multi_clip_not_permitted',
+          details: { advertised, secondClipStatus: res.status },
+        };
+      }
+      return { id, description, status: 'pass', durationMs, details: { advertised, secondClipStatus: res.status } };
+    }
+
+    // single (or unadvertised): clipIndex > 0 must be rejected.
+    if (rejectedAsUnpermitted) {
+      return { id, description, status: 'pass', durationMs, details: { advertised, secondClipStatus: res.status } };
+    }
+    return {
+      id,
+      description,
+      status: 'fail',
+      durationMs,
+      message: `server advertised replay.clips = ${advertised} but did not reject clipIndex > 0 with 403 multi_clip_not_permitted (got ${res.status}${body.error ? ` ${body.error}` : ''})`,
+      details: { body: res.bodyJson ?? res.bodyText.slice(0, 256) },
+    };
+  } catch (err) {
+    return {
+      id,
+      description,
+      status: 'fail',
+      durationMs: performance.now() - started,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export const replayClipCapabilityCase: CaseDefinition = {
+  id: 'replay.clip-capability',
+  description:
+    'The server enforces the replay clip capability it advertises (single rejects clipIndex > 0)',
+  run: runClipCapability,
+};
