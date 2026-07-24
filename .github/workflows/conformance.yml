@@ -222,7 +222,7 @@ jobs:
             --endpoint-url http://localhost:9000
 
       - name: Setup Node 20
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
 
