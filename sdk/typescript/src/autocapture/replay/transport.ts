@@ -54,6 +54,8 @@ export interface ReplaySignedUrlBody {
   readonly sequence: number;
   readonly approxBytes: number;
   readonly contentType: typeof REPLAY_CHUNK_CONTENT_TYPE;
+  /** 0-based clip index; sent only for clips beyond the first (multi-clip). */
+  readonly clipIndex?: number;
 }
 
 interface SignedUrlResponse {
@@ -120,10 +122,14 @@ export class ReplayTransport {
    * Upload one chunk through all three legs. Never throws; resolves `true` on a
    * durable complete, `false` when the chunk was dropped after retries.
    */
-  async upload(sessionId: string, chunk: ReplayChunk): Promise<boolean> {
+  async upload(
+    sessionId: string,
+    chunk: ReplayChunk,
+    clipIndex = 0,
+  ): Promise<boolean> {
     try {
       const sha256 = await sha256Hex(chunk.bytes);
-      const signed = await this.getSignedUrl(sessionId, chunk);
+      const signed = await this.getSignedUrl(sessionId, chunk, clipIndex);
       if (!signed) return false;
       const put = await this.putChunk(signed, chunk);
       if (!put) return false;
@@ -138,6 +144,7 @@ export class ReplayTransport {
   private async getSignedUrl(
     sessionId: string,
     chunk: ReplayChunk,
+    clipIndex = 0,
   ): Promise<SignedUrlResponse | null> {
     const url = new URL(REPLAY_SIGNED_URL_PATH, this.deps.endpointUrl).toString();
     const body: ReplaySignedUrlBody = {
@@ -145,6 +152,10 @@ export class ReplayTransport {
       sequence: chunk.sequence,
       approxBytes: chunk.byteLength,
       contentType: REPLAY_CHUNK_CONTENT_TYPE,
+      // Only tag clips beyond the first: keeps single-clip uploads compatible
+      // with backends that predate `clipIndex`, and a clipIndex > 0 only ever
+      // reaches a backend that advertised multi-clip.
+      ...(clipIndex > 0 ? { clipIndex } : {}),
     };
     const res = await this.withRetry(() =>
       this.deps.fetchImpl(url, {

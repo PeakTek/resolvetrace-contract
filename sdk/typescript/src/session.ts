@@ -26,6 +26,7 @@ import type { IdentityState } from './identity.js';
 import { isBrowser } from './runtime.js';
 import type {
   IsoDateTime,
+  ReportWidgetClipMode,
   SessionEndPayload,
   SessionEndReason,
   SessionStartAcceptance,
@@ -50,6 +51,8 @@ interface StoredSession {
   lastActivityAt: IsoDateTime;
   /** Server-minted support code, persisted so it survives a page reload. */
   supportCode?: string;
+  /** Replay clip capability, persisted so the widget mode survives a reload. */
+  replayClips?: 'single' | 'multi';
 }
 
 /** Shape of a parsed but not-yet-validated stored blob (either field naming). */
@@ -58,6 +61,7 @@ interface StoredSessionMaybe {
   startedAt?: unknown;
   lastActivityAt?: unknown;
   supportCode?: unknown;
+  replayClips?: unknown;
   // Legacy snake_case keys, accepted on read for backward compatibility.
   session_id?: unknown;
   started_at?: unknown;
@@ -83,6 +87,13 @@ export interface SessionManagerOptions {
   transport: SessionTransport;
   identity: IdentityState;
   onError?: (err: Error) => void;
+  /**
+   * Invoked when a session-start response is folded in (carries the support
+   * code + the server's replay clip capability). Lets the client react to a
+   * server-advertised capability — e.g. re-mount the report widget in
+   * multi-clip mode. Not called on the network-free reload/restore path.
+   */
+  onStartAcceptance?: (acceptance: SessionStartAcceptance) => void;
   sessionInactivityMs?: number;
   sessionMaxDurationMs?: number;
   autoSession?: boolean;
@@ -141,6 +152,9 @@ export class SessionManager {
   private readonly transport: SessionTransport;
   private readonly identity: IdentityState;
   private readonly onError: ((err: Error) => void) | undefined;
+  private readonly onStartAcceptance:
+    | ((acceptance: SessionStartAcceptance) => void)
+    | undefined;
   private readonly inactivityMs: number;
   private readonly maxDurationMs: number;
   private readonly autoSession: boolean;
@@ -159,6 +173,13 @@ export class SessionManager {
    * session's start resolves.
    */
   private supportCode: string | null = null;
+  /**
+   * The server-advertised replay clip capability for this session. Defaults to
+   * `'single'` (OSS / older backends); upgraded to `'multi'` when a session-start
+   * response advertises it. Tenant-stable, so it is NOT cleared on session roll
+   * (avoids a single→multi flicker); persisted so a reload restores it.
+   */
+  private replayClips: ReportWidgetClipMode = 'single';
   private startedAtMs: number | null = null;
   private lastActivityMs: number | null = null;
   private lastFlushedActivityMs: number | null = null;
@@ -176,6 +197,7 @@ export class SessionManager {
     this.transport = opts.transport;
     this.identity = opts.identity;
     this.onError = opts.onError;
+    this.onStartAcceptance = opts.onStartAcceptance;
     this.inactivityMs = opts.sessionInactivityMs ?? DEFAULT_SESSION_INACTIVITY_MS;
     this.maxDurationMs = opts.sessionMaxDurationMs ?? DEFAULT_SESSION_MAX_DURATION_MS;
     this.autoSession = opts.autoSession ?? true;
@@ -210,6 +232,11 @@ export class SessionManager {
    */
   getSupportCode(): string | null {
     return this.supportCode;
+  }
+
+  /** The server-granted replay clip capability (`'single'` until advertised). */
+  getReplayClips(): ReportWidgetClipMode {
+    return this.replayClips;
   }
 
   /** Current state. Useful for tests; not part of the public package API. */
@@ -415,8 +442,11 @@ export class SessionManager {
     if (acceptance === null) return;
     if (this.currentId !== forSessionId) return;
     this.supportCode = acceptance.supportCode;
-    // Persist the now-known code so it survives a page reload (see tryRestore).
+    this.replayClips = acceptance.replayClips;
+    // Persist the now-known code + capability so they survive a page reload
+    // (see tryRestore).
     this.flushStoredSession();
+    this.onStartAcceptance?.(acceptance);
   }
 
   private buildStartPayload(id: Ulid, startedAtMs: number): SessionStartPayload {
@@ -620,6 +650,10 @@ export class SessionManager {
       typeof parsed.supportCode === 'string' && parsed.supportCode.length > 0
         ? parsed.supportCode
         : null;
+    // Restore the replay clip capability so the report widget mounts in the
+    // right mode after a reload (the restore path is network-free — no new
+    // session-start fires to re-advertise it).
+    this.replayClips = parsed.replayClips === 'multi' ? 'multi' : 'single';
     this.state = 'active';
     this.armInactivityTimer();
     this.armMaxDurationTimer();
@@ -635,6 +669,7 @@ export class SessionManager {
       startedAt: new Date(this.startedAtMs).toISOString(),
       lastActivityAt: new Date(last).toISOString(),
       ...(this.supportCode !== null ? { supportCode: this.supportCode } : {}),
+      ...(this.replayClips === 'multi' ? { replayClips: 'multi' as const } : {}),
     };
     try {
       ss.setItem(this.storageKey, JSON.stringify(stored));

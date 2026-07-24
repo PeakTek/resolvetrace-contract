@@ -402,7 +402,11 @@ export class ReplayRecorder {
       if (clips.length === 0) return empty;
       let uploaded = 0;
       let failed = 0;
-      for (const clip of clips) {
+      // Dense 0-based clip index (array position, not clipId — that gaps after
+      // removeClip). The transport sends it only for clips beyond the first;
+      // the backend may reject clipIndex > 0 unless multi-clip is granted.
+      for (let clipIndex = 0; clipIndex < clips.length; clipIndex += 1) {
+        const clip = clips[clipIndex]!;
         const transport = new ReplayTransport({
           endpointUrl: this.deps.endpointUrl,
           apiKey: this.deps.apiKey,
@@ -413,7 +417,7 @@ export class ReplayRecorder {
         });
         for (const chunk of clip.chunks) {
           try {
-            const ok = await transport.upload(clip.sessionId, chunk);
+            const ok = await transport.upload(clip.sessionId, chunk, clipIndex);
             if (ok) {
               uploaded += 1;
               this.chunksUploaded += 1;

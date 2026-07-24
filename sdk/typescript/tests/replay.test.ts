@@ -726,6 +726,53 @@ describe('replay recorder — review mode (buffer / curate / submit)', () => {
     expect(seqs).toEqual([0, 2]);
   });
 
+  it('tags clips with clipIndex — omitted for clip 0, present for the rest', async () => {
+    restore = installBrowser('/ok');
+    const { fetchImpl, calls } = makeReplayFetch();
+    const { r, fake } = reviewRecorder(fetchImpl);
+
+    await recordClip(r, fake); // clip 0
+    await recordClip(r, fake); // clip 1
+    await recordClip(r, fake); // clip 2
+    expect(r.listClips()).toHaveLength(3);
+
+    expect((await r.submit()).uploaded).toBe(3);
+
+    const clipIndexes = calls
+      .filter((c) => c.url.includes('/v1/replay/signed-url'))
+      .map((c) => (c.body as { clipIndex?: number }).clipIndex);
+    // Clip 0 omits clipIndex entirely (keeps single-clip uploads compatible with
+    // pre-capability cores); clips beyond the first are tagged with their 0-based
+    // dense position — a clipIndex > 0 only ever reaches a multi-clip backend.
+    expect(clipIndexes).toEqual([undefined, 1, 2]);
+  });
+
+  it('clipIndex is the dense array position after removeClip (not clipId/sequence)', async () => {
+    restore = installBrowser('/ok');
+    const { fetchImpl, calls } = makeReplayFetch();
+    const { r, fake } = reviewRecorder(fetchImpl);
+
+    await recordClip(r, fake); // clip 0
+    await recordClip(r, fake); // clip 1 → removed
+    await recordClip(r, fake); // clip 2
+
+    const clips = r.listClips();
+    expect(r.removeClip(clips[1]!.clipId)).toBe(true); // drop the MIDDLE clip
+    expect((await r.submit()).uploaded).toBe(2);
+
+    const idxs = calls
+      .filter((c) => c.url.includes('/v1/replay/signed-url'))
+      .map((c) => (c.body as { clipIndex?: number }).clipIndex);
+    const seqs = calls
+      .filter((c) => c.url.includes('/v1/replay/complete'))
+      .map((c) => (c.body as { sequence: number }).sequence);
+    // Survivors re-densify: clipIndex is the array position [omitted(0), 1] while
+    // the sequence numbers keep their original gap [0, 2]. Proves clipIndex is
+    // NOT clipId (which gaps) and NOT sequence (which also gaps).
+    expect(idxs).toEqual([undefined, 1]);
+    expect(seqs).toEqual([0, 2]);
+  });
+
   it('discard() uploads nothing and clears the buffer', async () => {
     restore = installBrowser('/ok');
     const { fetchImpl, calls } = makeReplayFetch();
