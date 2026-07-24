@@ -191,6 +191,24 @@ export const SessionStartResponse = Type.Object(
     sessionId: Ulid,
     acceptedAt: IsoDateTime,
     supportCode: SupportCode,
+    replay: Type.Optional(
+      Type.Object(
+        {
+          clips: Type.Union([Type.Literal('single'), Type.Literal('multi')], {
+            description:
+              'Replay clip capability the backend grants this session. ' +
+              "'single' = the session records as one clip; 'multi' = the user " +
+              'may capture and curate several clips. Absent ⇒ treat as single.',
+          }),
+        },
+        {
+          additionalProperties: false,
+          description:
+            'Server-advertised replay capabilities for this session. Optional ' +
+            'for backward compatibility; absent means the single-clip baseline.',
+        },
+      ),
+    ),
   },
   {
     additionalProperties: false,

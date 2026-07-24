@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-23
+
+TypeScript SDK: **server-advertised replay clip capability**. The backend now
+tells each session whether it may curate multiple replay clips, and the SDK
+adapts the "Report a problem" record widget with no client configuration —
+single-clip by default, multi-clip when the backend advertises it. Pre-1.0 — the
+public API is not yet stable.
+
+### Added
+- OpenAPI / JSON schemas: optional `replay: { clips: 'single' | 'multi' }` on
+  `SessionStartResponse`. A backend advertises the replay clip capability it
+  grants a session; absent means the single-clip baseline (older backends).
+  Additive and backward-compatible (oasdiff: new optional response property).
+- OpenAPI / JSON schemas: optional `clipIndex` (integer ≥ 0) on
+  `ReplaySignedUrlRequest` — the 0-based index of the clip a replay chunk belongs
+  to. The SDK sends it **only for clips beyond the first**, so single-clip uploads
+  stay wire-compatible with backends that predate the field, and a `clipIndex > 0`
+  only ever reaches a backend that advertised multi-clip.
+- TypeScript SDK: `client.session.replayClips` (`'single' | 'multi'`) surfaces the
+  server-advertised clip capability for the current session (defaults to
+  `'single'`; persisted so a page reload restores it).
+
+### Changed
+- TypeScript SDK: the **config-mounted** report widget's clip mode is now decided
+  by the server capability rather than client config. `reportWidget: { record:
+  true }` adapts automatically — the widget offers multi-clip curation only when
+  the backend advertises it, and single-clip otherwise. On the first session-start
+  after mount it re-mounts if the granted capability differs from the single-clip
+  default. (A host mounting the widget imperatively via `mountReportWidget` still
+  controls `record.clips` directly.)
+
 ## [0.3.0] — 2026-07-16
 
 TypeScript SDK feature release: **user-driven session recording** — a buffered

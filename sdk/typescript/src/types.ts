@@ -225,6 +225,12 @@ export interface SessionStartResponse {
   sessionId: Ulid;
   acceptedAt: IsoDateTime;
   supportCode: string;
+  /**
+   * Server-advertised replay capabilities for this session. Optional for
+   * backward compatibility; absent means the single-clip baseline. `clips`
+   * tells the SDK whether the report widget offers multi-clip curation.
+   */
+  replay?: { clips: ReportWidgetClipMode };
 }
 
 /**
@@ -236,6 +242,11 @@ export interface SessionStartResponse {
  */
 export interface SessionStartAcceptance {
   supportCode: string;
+  /**
+   * The replay clip capability the server granted this session. Defaults to
+   * `'single'` when the server advertised none (older backends / OSS baseline).
+   */
+  replayClips: ReportWidgetClipMode;
 }
 
 /** Body sent by the SDK on `POST /v1/session/end`. */

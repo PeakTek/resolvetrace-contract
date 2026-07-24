@@ -392,6 +392,29 @@
           "pattern": "^[0-9A-HJKMNP-TV-Z]{8}$",
           "description": "Per-session support code (Crockford base32, 8 chars, uppercase canonical). Server-minted on session start; the SDK surfaces it for \"Support code: XXXXXXXX\" display.",
           "type": "string"
+        },
+        "replay": {
+          "additionalProperties": false,
+          "description": "Server-advertised replay capabilities for this session. Optional for backward compatibility; absent means the single-clip baseline.",
+          "type": "object",
+          "required": [
+            "clips"
+          ],
+          "properties": {
+            "clips": {
+              "description": "Replay clip capability the backend grants this session. 'single' = the session records as one clip; 'multi' = the user may capture and curate several clips. Absent ⇒ treat as single.",
+              "anyOf": [
+                {
+                  "const": "single",
+                  "type": "string"
+                },
+                {
+                  "const": "multi",
+                  "type": "string"
+                }
+              ]
+            }
+          }
         }
       }
     },

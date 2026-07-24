@@ -74,6 +74,16 @@ export const ReplaySignedUrlRequest = Type.Object(
     contentType: Type.Literal('application/vnd.resolvetrace.replay+rrweb', {
       description: 'Content type of the chunk body. Must match the upload exactly.',
     }),
+    clipIndex: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+        description:
+          '0-based clip index within the session for multi-clip replay. Absent ⇒ ' +
+          'the first/single clip (index 0). The SDK sends it only for clips ' +
+          'beyond the first; a backend may reject clipIndex > 0 when the ' +
+          'session is not granted the multi-clip capability.',
+      }),
+    ),
   },
   {
     additionalProperties: false,

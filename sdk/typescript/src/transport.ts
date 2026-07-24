@@ -176,9 +176,19 @@ async function parseSessionStartAcceptance(
   try {
     const raw: unknown = await response.json();
     if (!raw || typeof raw !== 'object') return null;
-    const code = (raw as Record<string, unknown>).supportCode;
+    const obj = raw as Record<string, unknown>;
+    const code = obj.supportCode;
     if (typeof code !== 'string' || !SUPPORT_CODE_RE.test(code)) return null;
-    return { supportCode: code };
+    // Optional server capability: replay.clips. Absent / malformed ⇒ the
+    // single-clip baseline (older backends / OSS). Only 'multi' upgrades.
+    const replay = obj.replay;
+    const clips =
+      replay &&
+      typeof replay === 'object' &&
+      (replay as Record<string, unknown>).clips === 'multi'
+        ? 'multi'
+        : 'single';
+    return { supportCode: code, replayClips: clips };
   } catch {
     return null;
   }

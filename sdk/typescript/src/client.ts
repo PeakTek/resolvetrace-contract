@@ -35,6 +35,7 @@ import type {
   EventInput,
   FlushOptions,
   FlushResult,
+  ReportWidgetClipMode,
   SessionEndOptions,
   ShutdownOptions,
   Ulid,
@@ -145,6 +146,8 @@ export class ResolveTraceClient {
   );
   /** Auto-mounted report widget handle (browser-only; null when not mounted). */
   private reportWidgetHandle: ReportWidgetHandle | null = null;
+  /** Clip mode the auto-mounted widget currently reflects (server-advertised). */
+  private reportWidgetClips: ReportWidgetClipMode = 'single';
 
   /** Public session controls. */
   public readonly session: {
@@ -155,6 +158,12 @@ export class ResolveTraceClient {
      * lives for the session's lifetime; replaced when a new session starts.
      */
     readonly supportCode: string | null;
+    /**
+     * The replay clip capability the backend granted this session: `'single'`
+     * (OSS / not entitled) or `'multi'` (Platform). The report widget adapts to
+     * it automatically; exposed for hosts that want to reflect it in their own UI.
+     */
+    readonly replayClips: ReportWidgetClipMode;
     end: (opts?: SessionEndOptions) => Promise<void>;
     restart: () => Ulid;
   };
@@ -200,6 +209,20 @@ export class ResolveTraceClient {
       },
       identity: this.identityState,
       onError: this.config.onError,
+      // A server-advertised clip capability may arrive on the first session
+      // start. Re-mount the record widget in the granted mode if it changed
+      // (default 'single' → 'multi' for an entitled tenant); OSS stays 'single'
+      // so no re-mount happens.
+      onStartAcceptance: (acceptance) => {
+        const rw = this.config.reportWidget;
+        if (
+          rw !== null &&
+          rw.record &&
+          acceptance.replayClips !== this.reportWidgetClips
+        ) {
+          this.mountReportWidgetForClips(acceptance.replayClips);
+        }
+      },
       sessionInactivityMs: this.config.sessionInactivityMs,
       sessionMaxDurationMs: this.config.sessionMaxDurationMs,
       autoSession: this.config.autoSession,
@@ -240,6 +263,10 @@ export class ResolveTraceClient {
         enumerable: true,
         get: () => mgr.getSupportCode(),
       },
+      replayClips: {
+        enumerable: true,
+        get: () => mgr.getReplayClips(),
+      },
       end: {
         enumerable: true,
         value: (opts: SessionEndOptions = {}) => mgr.end(opts.timeoutMs),
@@ -277,45 +304,56 @@ export class ResolveTraceClient {
       }
     }
 
-    // Auto-mount the optional report widget when requested via config. Browser-
-    // only and guarded inside `mountReportWidget`; never throws into the
-    // constructor. Hosts can also mount it directly with `mountReportWidget`.
-    if (this.config.reportWidget !== null) {
-      try {
-        const rw = this.config.reportWidget;
-        const replay = this.replay;
-        const widgetClient: ReportWidgetClient = {
-          reportProblem: (input: ReportProblemInput) =>
-            this.reportProblemInternal(input, 'widget'),
+    // Auto-mount the optional report widget when requested via config. The clip
+    // mode starts from the (possibly reload-restored) server capability, then
+    // upgrades via onStartAcceptance if the backend advertises 'multi'.
+    this.mountReportWidgetForClips(mgr.getReplayClips());
+  }
+
+  /**
+   * (Re)mount the config-driven report widget with the given clip capability.
+   * Browser-only and guarded inside `mountReportWidget`; never throws. On the
+   * config auto-mount path the SERVER capability decides single vs multi — any
+   * host-provided `record.clips` is overridden (the imperative `mountReportWidget`
+   * path is untouched and still host-controlled). Destroys any prior instance.
+   */
+  private mountReportWidgetForClips(clips: ReportWidgetClipMode): void {
+    if (this.config.reportWidget === null) return;
+    try {
+      const rw = this.config.reportWidget;
+      const replay = this.replay;
+      const widgetClient: ReportWidgetClient = {
+        reportProblem: (input: ReportProblemInput) =>
+          this.reportProblemInternal(input, 'widget'),
+      };
+      // Record mode: wire the widget's neutral recorder onto client.replay.*.
+      if (rw.record) {
+        widgetClient.recorder = {
+          start: () => replay.start(),
+          stop: () => replay.stop(),
+          listClips: () =>
+            replay
+              .listClips()
+              .map((c) => ({ id: c.clipId, durationMs: c.durationMs })),
+          removeClip: (id: number) => {
+            replay.removeClip(id);
+          },
+          submit: async () => {
+            await replay.submit();
+          },
+          discard: () => replay.discard(),
         };
-        // Record mode: wire the widget's neutral recorder onto client.replay.*.
-        // (A host mounting directly can inject onRecordStart/onBeforeSubmit for
-        // consent; the auto-mount path has no callbacks by design.)
-        if (rw.record) {
-          widgetClient.recorder = {
-            start: () => replay.start(),
-            stop: () => replay.stop(),
-            listClips: () =>
-              replay
-                .listClips()
-                .map((c) => ({ id: c.clipId, durationMs: c.durationMs })),
-            removeClip: (id: number) => {
-              replay.removeClip(id);
-            },
-            submit: async () => {
-              await replay.submit();
-            },
-            discard: () => replay.discard(),
-          };
-        }
-        this.reportWidgetHandle = mountReportWidget(widgetClient, rw);
-      } catch (err) {
-        if (this.config.onError) {
-          try {
-            this.config.onError(err instanceof Error ? err : new Error(String(err)));
-          } catch {
-            /* swallow */
-          }
+      }
+      const options = rw.record ? { ...rw, record: { clips } } : rw;
+      this.reportWidgetHandle?.destroy();
+      this.reportWidgetHandle = mountReportWidget(widgetClient, options);
+      this.reportWidgetClips = clips;
+    } catch (err) {
+      if (this.config.onError) {
+        try {
+          this.config.onError(err instanceof Error ? err : new Error(String(err)));
+        } catch {
+          /* swallow */
         }
       }
     }
